@@ -18,6 +18,7 @@ import {
   InterruptableStoppingCriteria,
   env,
 } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
+import { summarizePrompt } from './prompts.js';
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
@@ -176,11 +177,7 @@ self.onmessage = async (e) => {
         await loadModel(which || 'e2b');
         self.postMessage({ type: 'started', requestId });
 
-        // Hardcoded summary prompt for the vertical slice. Replaced in a
-        // later task by prompts.js with EN/JA variants.
-        const promptText = (lang === 'ja')
-          ? 'このスクリーンショットを学習者向けに要約してください。最初に太字で1文のTL;DR、その後に3〜5個の重要なポイントを箇条書きで。200語以内。'
-          : 'You are a study tutor. Summarize this screenshot in markdown. First a one-sentence TL;DR (bold), then 3-5 key bullet points. Under 200 words.';
+        const promptText = summarizePrompt(lang);
 
         const inputs = await buildInputs(image, promptText);
 
