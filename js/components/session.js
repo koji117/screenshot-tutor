@@ -86,7 +86,16 @@ export function mountSession(container, { worker, sessionId }) {
   // error. Set whenever we post a new request; cleared on done/cancelled.
   let lastPost = null;
   let busyRetries = 0;
-  const MAX_BUSY_RETRIES = 3;
+  const MAX_BUSY_RETRIES = 30;
+  const BUSY_RETRY_MS = 1000;
+
+  // Disable interactive controls while the worker is busy with any op so
+  // the user can't kick off a second generate that would race the first.
+  function setControlsBusy(busy) {
+    breakdownBtn.disabled = busy;
+    chatInput.disabled = busy;
+    chatForm.querySelector('button[type="submit"]').disabled = busy;
+  }
 
   function onWorkerMessage(e) {
     const m = e.data;
@@ -118,6 +127,7 @@ export function mountSession(container, { worker, sessionId }) {
       }
       status.textContent = t('session.thinking', s.lang);
       cancelBtn.style.display = '';
+      setControlsBusy(true);
     }
     else if (m.type === 'token') {
       if (activeOp === 'summarize') {
@@ -148,15 +158,19 @@ export function mountSession(container, { worker, sessionId }) {
       activeOp = null;
       lastPost = null;
       busyRetries = 0;
+      setControlsBusy(false);
     }
     else if (m.type === 'error') {
-      // Transient busy: previous generate is still unwinding from a cancel.
-      // Wait briefly and retry the same operation.
+      // Worker reports busy when a previous generate is still in flight.
+      // Wait and retry — the worker will be free as soon as the prior op
+      // emits its terminal event. Retry budget is generous (30s) since a
+      // long summary stream can legitimately keep the worker busy that
+      // long.
       if (m.error === 'busy' && lastPost && busyRetries < MAX_BUSY_RETRIES) {
         busyRetries++;
         status.textContent = t('session.thinking', s.lang);
         currentRequestId = null;
-        setTimeout(() => { if (lastPost) lastPost(); }, 800);
+        setTimeout(() => { if (lastPost) lastPost(); }, BUSY_RETRY_MS);
         return;
       }
       status.textContent = tFmt('session.errorWorker', s.lang, { error: m.error });
@@ -166,6 +180,7 @@ export function mountSession(container, { worker, sessionId }) {
       activeOp = null;
       lastPost = null;
       busyRetries = 0;
+      setControlsBusy(false);
     }
   }
 
@@ -181,6 +196,7 @@ export function mountSession(container, { worker, sessionId }) {
     if (sess.summary) return;
     busyRetries = 0;
     lastPost = postSummarize;
+    setControlsBusy(true);
     await postSummarize();
   }
 
@@ -207,6 +223,7 @@ export function mountSession(container, { worker, sessionId }) {
     breakdownText = '';
     busyRetries = 0;
     lastPost = postBreakdown;
+    setControlsBusy(true);
     await postBreakdown();
   }
 
@@ -245,6 +262,7 @@ export function mountSession(container, { worker, sessionId }) {
     busyRetries = 0;
     const historyBefore = newChat.slice(0, -1);
     lastPost = () => postChat(historyBefore, userText);
+    setControlsBusy(true);
     await postChat(historyBefore, userText);
   }
 

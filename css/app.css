@@ -555,6 +555,12 @@ button.primary:disabled {
 
 .chat-form input:hover { border-color: var(--ink-3); }
 
+.chat-form input:disabled {
+  background: var(--surface-1);
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
 .chat-form input:focus {
   outline: none;
   border-color: var(--accent);
