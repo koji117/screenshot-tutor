@@ -168,3 +168,62 @@ select { font-size: 14px; padding: 2px 6px; }
 .topbar-actions select { font-size: 13px; padding: 3px 6px; }
 
 .main { max-width: var(--max-width); margin: 0 auto; padding: 1.5rem; }
+
+.empty {
+  text-align: center;
+  padding: 4rem 2rem;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  margin-top: 2rem;
+}
+.empty.drag-over { border-color: var(--accent); background: var(--accent-bg); }
+.empty h2 { margin: 0 0 0.5rem; font-weight: 500; }
+.empty-actions { display: flex; gap: 0.75rem; justify-content: center; margin-top: 1rem; }
+.empty-actions button {
+  padding: 8px 18px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.empty-actions button:hover { opacity: 0.9; }
+
+.session-preview {
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  display: block;
+  margin: 0 auto 1rem;
+  max-height: 400px;
+  object-fit: contain;
+}
+
+.session h2 { font-size: 1rem; font-weight: 600; margin: 1rem 0 0.5rem; color: var(--muted); }
+
+.markdown-out {
+  background: #fafafa;
+  padding: 1rem 1.25rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  min-height: 3rem;
+}
+.markdown-out p { margin: 0 0 0.5em; }
+.markdown-out p:last-child { margin-bottom: 0; }
+.markdown-out ul, .markdown-out ol { margin: 0 0 0.5em; padding-left: 1.5em; }
+.markdown-out strong { font-weight: 600; }
+.markdown-out code { background: #ececec; padding: 1px 4px; border-radius: 2px; font-family: ui-monospace, monospace; }
+.markdown-out details { margin: 0.5em 0; }
+.markdown-out summary { cursor: pointer; color: var(--accent); }
+
+.session-actions { margin-top: 1rem; }
+.session-actions button {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+}
+
+.error { color: var(--error); }
