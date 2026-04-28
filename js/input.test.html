@@ -1,0 +1,105 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>input.js unit tests</title>
+  <style>
+    body { font-family: monospace; padding: 2em; max-width: 900px; }
+    .pass { color: green; }
+    .fail { color: red; font-weight: bold; }
+    pre { background: #f4f4f4; padding: 0.5em; }
+  </style>
+</head>
+<body>
+  <h1>input.js — unit tests</h1>
+  <div id="out"></div>
+  <script type="module">
+    import { normalizeImage } from './input.js';
+
+    const out = document.getElementById('out');
+    let passed = 0, failed = 0;
+
+    function log(name, ok, detail) {
+      const line = document.createElement('div');
+      line.className = ok ? 'pass' : 'fail';
+      line.textContent = (ok ? '✓ ' : '✗ ') + name;
+      out.appendChild(line);
+      if (!ok && detail) {
+        const pre = document.createElement('pre');
+        pre.textContent = detail;
+        out.appendChild(pre);
+        failed++;
+      } else if (ok) passed++;
+    }
+
+    // Build a synthetic image blob of given dimensions.
+    async function makeBlob(w, h, color = '#abc') {
+      const canvas = new OffscreenCanvas(w, h);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, w, h);
+      return await canvas.convertToBlob({ type: 'image/png' });
+    }
+
+    async function dimsOfDataUrl(dataUrl) {
+      const img = new Image();
+      img.src = dataUrl;
+      await img.decode();
+      return { w: img.naturalWidth, h: img.naturalHeight };
+    }
+
+    // Test 1: small image stays small (no upscaling)
+    {
+      const blob = await makeBlob(800, 600);
+      const r = await normalizeImage(blob);
+      const d = await dimsOfDataUrl(r.image);
+      log('800x600 stays 800x600', d.w === 800 && d.h === 600,
+        'got ' + d.w + 'x' + d.h);
+      log('output is JPEG data URL', r.image.startsWith('data:image/jpeg;base64,'));
+    }
+
+    // Test 2: oversized image downscales to 1280 max edge, preserving aspect
+    {
+      const blob = await makeBlob(2560, 1440);
+      const r = await normalizeImage(blob);
+      const d = await dimsOfDataUrl(r.image);
+      log('2560x1440 downscales to 1280x720',
+        d.w === 1280 && d.h === 720,
+        'got ' + d.w + 'x' + d.h);
+    }
+
+    // Test 3: tall image: height becomes 1280
+    {
+      const blob = await makeBlob(800, 3200);
+      const r = await normalizeImage(blob);
+      const d = await dimsOfDataUrl(r.image);
+      log('800x3200 downscales to 320x1280',
+        d.w === 320 && d.h === 1280,
+        'got ' + d.w + 'x' + d.h);
+    }
+
+    // Test 4: thumbnail is 240 max edge
+    {
+      const blob = await makeBlob(2000, 1000);
+      const r = await normalizeImage(blob);
+      const d = await dimsOfDataUrl(r.thumb);
+      log('thumb downscales to 240x120',
+        d.w === 240 && d.h === 120,
+        'got ' + d.w + 'x' + d.h);
+    }
+
+    // Test 5: returns reported dimensions
+    {
+      const blob = await makeBlob(2560, 1440);
+      const r = await normalizeImage(blob);
+      log('reports normalized width=1280', r.width === 1280, 'got ' + r.width);
+      log('reports normalized height=720', r.height === 720, 'got ' + r.height);
+    }
+
+    const summary = document.createElement('h2');
+    summary.textContent = `${passed} passed, ${failed} failed`;
+    summary.style.color = failed ? 'red' : 'green';
+    out.appendChild(summary);
+  </script>
+</body>
+</html>
