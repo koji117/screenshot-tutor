@@ -24,3 +24,16 @@ html, body {
 #app {
   min-height: 100vh;
 }
+
+.sandbox {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.sandbox.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -8px;
+}
+
+.muted { color: var(--muted); margin-top: 0.5rem; }
