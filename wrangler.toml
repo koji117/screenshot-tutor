@@ -1,0 +1,11 @@
+name = "screenshot-tutor"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+workers_dev = true
+
+# The repo root holds the static site (index.html, css/, js/, manifest.json,
+# icons/). Wrangler uploads everything in this directory as assets, except
+# the entries listed in .assetsignore.
+[assets]
+directory = "./"
+binding = "ASSETS"

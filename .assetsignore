@@ -1,0 +1,28 @@
+# Files in this list are skipped by the Workers asset uploader so they
+# never become publicly fetchable. Keep this in sync with anything that
+# isn't part of the served static site.
+
+# Worker entry — handled by main = "src/index.js" in wrangler.toml.
+src/
+
+# Repo metadata.
+.git/
+.gitignore
+.assetsignore
+.impeccable.md
+
+# Project docs and design records.
+README.md
+TESTING.md
+docs/
+
+# Test pages — never deploy.
+js/store.test.html
+js/input.test.html
+js/i18n.test.html
+
+# Wrangler config itself.
+wrangler.toml
+
+# Cloudflare Pages headers file (no effect on Workers; safe to skip).
+_headers
