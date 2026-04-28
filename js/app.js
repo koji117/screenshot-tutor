@@ -3,6 +3,7 @@
 import { mountTopbar } from './components/topbar.js';
 import { mountEmptyState } from './components/empty-state.js';
 import { mountSession } from './components/session.js';
+import { mountSynthesis } from './components/synthesis.js';
 import { mountHistory } from './components/history.js';
 import { addSession } from './store.js';
 
@@ -42,10 +43,16 @@ function createWorker() {
 
 let activeSessionMount = null;
 let activeEmptyMount = null;
+let activeSynthesisMount = null;
 
-function showEmpty() {
+function clearActiveMounts() {
   if (activeSessionMount) { activeSessionMount.destroy(); activeSessionMount = null; }
   if (activeEmptyMount) { activeEmptyMount.destroy(); activeEmptyMount = null; }
+  if (activeSynthesisMount) { activeSynthesisMount.destroy(); activeSynthesisMount = null; }
+}
+
+function showEmpty() {
+  clearActiveMounts();
   main.innerHTML = '';
   activeEmptyMount = mountEmptyState(main, {
     onImage: (result) => {
@@ -61,14 +68,20 @@ function showEmpty() {
 }
 
 function showSession(sessionId) {
-  if (activeEmptyMount) { activeEmptyMount.destroy(); activeEmptyMount = null; }
-  if (activeSessionMount) { activeSessionMount.destroy(); }
+  clearActiveMounts();
   main.innerHTML = '';
   activeSessionMount = mountSession(main, { worker, sessionId });
 }
 
+function showSynthesis() {
+  clearActiveMounts();
+  main.innerHTML = '';
+  activeSynthesisMount = mountSynthesis(main, { worker });
+}
+
 const historyMount = mountHistory(document.getElementById('history-root'), {
   onSelect: (id) => showSession(id),
+  onSynthesize: showSynthesis,
 });
 
 mountTopbar(document.getElementById('topbar-root'), {

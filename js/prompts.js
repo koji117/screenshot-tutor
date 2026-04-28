@@ -28,6 +28,20 @@ const EN = {
     'a fact you cannot verify from the screenshot, say so rather than ' +
     'guessing. Match their depth: a short question gets a short answer.\n\n' +
     'Your earlier summary:\n\n' + summary,
+
+  synthesize: (summaries) =>
+    'You are a study tutor reviewing what a learner has been studying ' +
+    'recently. Below are summaries of ' + summaries.length + ' screenshots ' +
+    'they\'ve worked through, newest first. Produce a synthesis in markdown:\n\n' +
+    '1. **Themes** — 2-4 recurring topics or concepts across these sessions.\n' +
+    '2. **Connections** — how the topics relate to each other (one or two sentences).\n' +
+    '3. **Strengths** — what the learner seems to have a solid grasp of.\n' +
+    '4. **Gaps** — what is underexplored or could use more depth.\n' +
+    '5. **Suggested next steps** — 2-3 specific things to study next based on the pattern.\n\n' +
+    'Stay grounded in what the summaries actually say — do not invent topics ' +
+    'that are not there. Keep the whole synthesis under 350 words.\n\n' +
+    'Summaries:\n\n' +
+    summaries.map((s, i) => '### Session ' + (i + 1) + '\n\n' + s).join('\n\n---\n\n'),
 };
 
 const JA = {
@@ -56,6 +70,20 @@ const JA = {
     'スクリーンショットから確認できない事実については、推測せずにその旨を伝えてください。' +
     '質問の深さに合わせてください: 短い質問には短い答えを。\n\n' +
     'あなたの先ほどの要約:\n\n' + summary,
+
+  synthesize: (summaries) =>
+    'あなたは学習者が最近学んだ内容を振り返る家庭教師です。' +
+    '以下は、学習者が取り組んだ ' + summaries.length + ' 件のスクリーンショットの要約です (新しい順)。' +
+    '次の構成で Markdown による「学びの統合」を作成してください:\n\n' +
+    '1. **テーマ** — これらのセッションを通じて繰り返し現れる 2〜4 個のトピックや概念。\n' +
+    '2. **つながり** — それらのトピックがどう関係しているか (1〜2 文で)。\n' +
+    '3. **強み** — 学習者がしっかり理解できていそうな点。\n' +
+    '4. **不足** — 掘り下げが足りない、または深める余地がある点。\n' +
+    '5. **次の学習ステップ** — このパターンを踏まえた具体的な提案を 2〜3 個。\n\n' +
+    '要約に書かれている内容にだけ基づいてください — 書かれていないトピックを' +
+    '勝手に加えないでください。全体で 350 語以内に収めてください。\n\n' +
+    '要約:\n\n' +
+    summaries.map((s, i) => '### セッション ' + (i + 1) + '\n\n' + s).join('\n\n---\n\n'),
 };
 
 const TABLES = { en: EN, ja: JA };
@@ -70,4 +98,8 @@ export function breakdownPrompt(lang, summary) {
 
 export function chatSystemPrompt(lang, summary) {
   return (TABLES[lang] || EN).chatSystem(summary || '');
+}
+
+export function synthesisPrompt(lang, summaries) {
+  return (TABLES[lang] || EN).synthesize(summaries || []);
 }

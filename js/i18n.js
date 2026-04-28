@@ -31,6 +31,12 @@ const STRINGS = {
     'history.empty': 'No past screenshots yet.',
     'history.delete': 'Delete',
     'history.confirmDelete': 'Delete this screenshot?',
+    'history.synthesize': 'Synthesize',
+    'history.synthesizeHint': 'Find themes and gaps across past sessions',
+    'synthesis.heading': 'What you have been studying',
+    'synthesis.subheading': 'Across {count} sessions',
+    'synthesis.notEnough': 'You need at least 2 past summaries before a synthesis is meaningful.',
+    'synthesis.thinking': 'Reading your past sessions…',
   },
   ja: {
     'app.title': 'スクリーンショット家庭教師',
@@ -60,6 +66,12 @@ const STRINGS = {
     'history.empty': '過去のスクリーンショットはありません',
     'history.delete': '削除',
     'history.confirmDelete': 'このスクリーンショットを削除しますか?',
+    'history.synthesize': '学びを統合',
+    'history.synthesizeHint': '過去のセッション全体からテーマや不足を見つけます',
+    'synthesis.heading': '最近学んだこと',
+    'synthesis.subheading': '{count} 件のセッションを通して',
+    'synthesis.notEnough': '統合するには過去の要約が 2 件以上必要です。',
+    'synthesis.thinking': '過去のセッションを読んでいます…',
   },
 };
 
