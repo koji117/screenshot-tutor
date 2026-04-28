@@ -45,6 +45,7 @@ let activeEmptyMount = null;
 
 function showEmpty() {
   if (activeSessionMount) { activeSessionMount.destroy(); activeSessionMount = null; }
+  if (activeEmptyMount) { activeEmptyMount.destroy(); activeEmptyMount = null; }
   main.innerHTML = '';
   activeEmptyMount = mountEmptyState(main, {
     onImage: (result) => {

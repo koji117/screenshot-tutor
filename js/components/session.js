@@ -82,6 +82,12 @@ export function mountSession(container, { worker, sessionId }) {
   let chatStreamingEl = null;
   let chatStreamingText = '';
 
+  // Remember the last attempted post so we can retry on a transient `busy`
+  // error. Set whenever we post a new request; cleared on done/cancelled.
+  let lastPost = null;
+  let busyRetries = 0;
+  const MAX_BUSY_RETRIES = 3;
+
   function onWorkerMessage(e) {
     const m = e.data;
     if (currentRequestId !== null && m.requestId !== currentRequestId) return;
@@ -126,13 +132,26 @@ export function mountSession(container, { worker, sessionId }) {
         chatStreamingText = '';
       }
       activeOp = null;
+      lastPost = null;
+      busyRetries = 0;
     }
     else if (m.type === 'error') {
+      // Transient busy: previous generate is still unwinding from a cancel.
+      // Wait briefly and retry the same operation.
+      if (m.error === 'busy' && lastPost && busyRetries < MAX_BUSY_RETRIES) {
+        busyRetries++;
+        status.textContent = t('session.thinking', s.lang);
+        currentRequestId = null;
+        setTimeout(() => { if (lastPost) lastPost(); }, 800);
+        return;
+      }
       status.textContent = tFmt('session.errorWorker', s.lang, { error: m.error });
       status.classList.add('error');
       cancelBtn.style.display = 'none';
       currentRequestId = null;
       activeOp = null;
+      lastPost = null;
+      busyRetries = 0;
     }
   }
 
@@ -146,6 +165,12 @@ export function mountSession(container, { worker, sessionId }) {
 
   async function startSummarize() {
     if (sess.summary) return;
+    busyRetries = 0;
+    lastPost = postSummarize;
+    await postSummarize();
+  }
+
+  async function postSummarize() {
     const blob = await (await fetch(sess.image)).blob();
     const bitmap = await createImageBitmap(blob);
     const requestId = nextRequestId++;
@@ -165,6 +190,14 @@ export function mountSession(container, { worker, sessionId }) {
     breakdownEl.style.display = '';
     breakdownEl.innerHTML = '';
     breakdownText = '';
+    busyRetries = 0;
+    lastPost = postBreakdown;
+    await postBreakdown();
+  }
+
+  async function postBreakdown() {
+    const current = getSession(sessionId);
+    if (!current) return;
     const blob = await (await fetch(current.image)).blob();
     const bitmap = await createImageBitmap(blob);
     const requestId = nextRequestId++;
@@ -199,6 +232,15 @@ export function mountSession(container, { worker, sessionId }) {
     chatStreamingEl = bubble.querySelector('.chat-text');
     chatStreamingText = '';
 
+    busyRetries = 0;
+    const historyBefore = newChat.slice(0, -1);
+    lastPost = () => postChat(historyBefore, userText);
+    await postChat(historyBefore, userText);
+  }
+
+  async function postChat(historyBefore, userText) {
+    const current = getSession(sessionId);
+    if (!current) return;
     const blob = await (await fetch(current.image)).blob();
     const bitmap = await createImageBitmap(blob);
     const requestId = nextRequestId++;
@@ -210,7 +252,7 @@ export function mountSession(container, { worker, sessionId }) {
         requestId,
         image: bitmap,
         summary: current.summary || '',
-        history: newChat.slice(0, -1),
+        history: historyBefore,
         userMessage: userText,
         lang: s.lang,
         model: s.model,
