@@ -33,8 +33,16 @@ window.__showToast = showToast;
 
 let worker = createWorker();
 
+// Bump WORKER_VERSION when js/worker.js or its imports change in a way
+// that needs a fresh fetch. Browsers cache the Worker script separately
+// from the page, so a plain Cmd+Shift+R won't necessarily pick up a new
+// worker.js — adding ?v=N forces the browser to treat it as a new URL.
+const WORKER_VERSION = 3;
+
 function createWorker() {
-  const w = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  const url = new URL('./worker.js', import.meta.url);
+  url.searchParams.set('v', String(WORKER_VERSION));
+  const w = new Worker(url, { type: 'module' });
   w.onerror = (e) => {
     console.error('worker error:', e);
     showToast('Worker crashed; respawning. Click New to retry.', 'error');
