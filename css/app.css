@@ -123,3 +123,48 @@ select { font-size: 14px; padding: 2px 6px; }
   pointer-events: none;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
 }
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar-title {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.topbar-actions label {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.topbar-actions button {
+  background: transparent;
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.topbar-actions button:hover { background: #f4f4f4; }
+.topbar-actions select { font-size: 13px; padding: 3px 6px; }
+
+.main { max-width: var(--max-width); margin: 0 auto; padding: 1.5rem; }
