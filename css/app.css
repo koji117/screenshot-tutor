@@ -39,16 +39,19 @@ html, body {
 .muted { color: var(--muted); margin-top: 0.5rem; }
 
 #output {
-  white-space: pre-wrap;
-  word-wrap: break-word;
   background: #f4f4f4;
   padding: 1rem;
   border-radius: 4px;
   margin-top: 1rem;
-  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   font-size: 14px;
   min-height: 4rem;
 }
+#output p { margin: 0 0 0.5em; }
+#output ul, #output ol { margin: 0 0 0.5em; padding-left: 1.5em; }
+#output strong { font-weight: 600; }
+#output code { background: #e0e0e0; padding: 1px 4px; border-radius: 2px; font-family: ui-monospace, monospace; }
+#output details { margin: 0.5em 0; }
+#output summary { cursor: pointer; color: var(--accent); }
 
 select { font-size: 14px; padding: 2px 6px; }
 

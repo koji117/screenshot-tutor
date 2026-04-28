@@ -1,6 +1,7 @@
 // js/app.js
 // Vertical slice: paste → normalize → worker.summarize → streamed display.
 import { installInputHandlers, captureScreen } from './input.js';
+import { setMarkdown } from './components/markdown.js';
 
 const root = document.getElementById('app');
 root.innerHTML = `
@@ -15,7 +16,7 @@ root.innerHTML = `
     </p>
     <div id="preview"></div>
     <div id="status" class="muted"></div>
-    <pre id="output"></pre>
+    <div id="output"></div>
     <div id="msg" class="muted"></div>
   </div>
 `;
@@ -38,13 +39,17 @@ const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'modu
 let nextRequestId = 1;
 let currentRequestId = null;
 let currentImageDataUrl = null;
+let streamedText = '';
 
 worker.onmessage = (e) => {
   const m = e.data;
   if (m.type === 'loading') status.textContent = `loading model… ${m.pct}%`;
   else if (m.type === 'ready') status.textContent = 'model ready';
-  else if (m.type === 'started') { output.textContent = ''; status.textContent = 'generating…'; }
-  else if (m.type === 'token') output.textContent += m.text;
+  else if (m.type === 'started') { streamedText = ''; output.textContent = ''; status.textContent = 'generating…'; }
+  else if (m.type === 'token') {
+    streamedText += m.text;
+    setMarkdown(output, streamedText);
+  }
   else if (m.type === 'done') { status.textContent = 'done'; cancelBtn.style.display = 'none'; currentRequestId = null; }
   else if (m.type === 'cancelled') { status.textContent = 'cancelled'; cancelBtn.style.display = 'none'; currentRequestId = null; }
   else if (m.type === 'error') {
