@@ -24,6 +24,22 @@ import { summarizePrompt, breakdownPrompt, chatSystemPrompt, synthesisPrompt } f
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
+// Route model fetches through /hf/* on this origin instead of going
+// to huggingface.co directly. This eliminates any CORS variance —
+// the browser sees only same-origin responses. _worker.js at the
+// repo root proxies /hf/* to huggingface.co with redirects followed
+// server-side and permissive CORS attached. When running locally
+// (python3 -m http.server) there is no proxy, so we fall back to the
+// direct huggingface.co host.
+if (typeof self !== 'undefined' && self.location && self.location.origin) {
+  const origin = self.location.origin;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)/.test(origin)) {
+    env.remoteHost = 'https://huggingface.co';
+  } else {
+    env.remoteHost = origin + '/hf';
+  }
+}
+
 const MODEL_REPOS = {
   e2b: 'onnx-community/gemma-4-E2B-it-ONNX',
   e4b: 'onnx-community/gemma-4-E4B-it-ONNX',
