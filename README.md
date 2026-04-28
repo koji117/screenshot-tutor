@@ -30,6 +30,32 @@ Requires Chrome, Edge, or Arc on Apple Silicon (or any WebGPU-capable machine). 
 
 See `docs/superpowers/specs/2026-04-28-screenshot-tutor-design.md` for the design spec, `docs/superpowers/plans/2026-04-28-screenshot-tutor.md` for the implementation plan, and `.impeccable.md` for the design context.
 
+## Deploy (Cloudflare Pages)
+
+The app is a static site, so any static host works. Cloudflare Pages
+is a good fit because it lets you set HTTP headers via `_headers` and
+keeps the CDN free.
+
+1. In the Cloudflare dashboard, open **Workers & Pages → Create → Pages
+   → Connect to Git** and pick this repo.
+2. Build settings: leave the build command empty, set the output
+   directory to `/` (root). No framework preset.
+3. Deploy. The first build is just a static copy.
+4. Open the assigned `*.pages.dev` URL.
+
+The `_headers` file in the repo configures cache rules and a security
+baseline. No `COOP`/`COEP` is set — adding cross-origin isolation
+would block loading the Gemma 4 model files from `huggingface.co` and
+the Transformers.js bundle from `cdn.jsdelivr.net`.
+
+### iPad install (PWA)
+
+Open the deployed URL in **Safari** (not Chrome — iOS PWA install only
+works from Safari). Tap the Share button → **Add to Home Screen** →
+**Add**. Launch from the Home Screen icon to keep the cached model
+through iOS's 7-day storage eviction window. WebGPU is required;
+on iPad that means iPadOS 16.4 or later.
+
 ## Testing
 
 See `TESTING.md`.

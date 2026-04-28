@@ -1,0 +1,31 @@
+# Cloudflare Pages headers
+# Syntax: https://developers.cloudflare.com/pages/configuration/headers/
+
+# HTML shell — network-first so new deploys show up immediately.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+/manifest.json
+  Cache-Control: public, max-age=0, must-revalidate
+
+# JS modules + worker — short cache, revalidated.
+# Worker scripts must NOT be served from a stale cache, since the LLM
+# protocol can change between deploys.
+/js/*
+  Cache-Control: public, max-age=300, must-revalidate
+
+# CSS — short cache.
+/css/*
+  Cache-Control: public, max-age=300, must-revalidate
+
+# PWA icons — hash-stable content.
+/icons/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Security baseline.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: display-capture=(self)
