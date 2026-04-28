@@ -28,6 +28,9 @@ function showToast(message, kind) {
   }, 4000);
 }
 
+// Expose toast helper for components without threading it through props.
+window.__showToast = showToast;
+
 let worker = createWorker();
 
 function createWorker() {
@@ -76,7 +79,10 @@ function showSession(sessionId) {
 function showSynthesis() {
   clearActiveMounts();
   main.innerHTML = '';
-  activeSynthesisMount = mountSynthesis(main, { worker });
+  activeSynthesisMount = mountSynthesis(main, {
+    worker,
+    onAfterClear: () => historyMount.refresh(),
+  });
 }
 
 const historyMount = mountHistory(document.getElementById('history-root'), {

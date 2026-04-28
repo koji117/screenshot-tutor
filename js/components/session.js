@@ -5,6 +5,7 @@
 import { setMarkdown } from './markdown.js';
 import { t, tFmt } from '../i18n.js';
 import { getSettings, updateSession, getSession } from '../store.js';
+import { exportSession, isFileSystemAccessSupported } from '../exports.js';
 
 export function mountSession(container, { worker, sessionId }) {
   const s = getSettings();
@@ -34,6 +35,9 @@ export function mountSession(container, { worker, sessionId }) {
       </form>
       <div class="session-actions">
         <button id="session-cancel" style="display:none" type="button">${t('session.cancel', s.lang)}</button>
+        <button id="session-export" type="button" ${isFileSystemAccessSupported() ? '' : 'disabled'}>
+          ${t('session.export', s.lang)}
+        </button>
       </div>
     </div>
   `;
@@ -293,6 +297,30 @@ export function mountSession(container, { worker, sessionId }) {
   });
 
   breakdownBtn.addEventListener('click', startBreakdown);
+
+  const exportBtn = container.querySelector('#session-export');
+  exportBtn.addEventListener('click', async () => {
+    if (!isFileSystemAccessSupported()) {
+      window.__showToast && window.__showToast(t('session.exportNotSupported', s.lang), 'error');
+      return;
+    }
+    exportBtn.disabled = true;
+    try {
+      const current = getSession(sessionId);
+      const { mdFilename } = await exportSession(current);
+      window.__showToast && window.__showToast(
+        tFmt('session.exportSuccess', s.lang, { filename: mdFilename })
+      );
+    } catch (err) {
+      const aborted = err && (err.name === 'AbortError' || /aborted|denied/i.test(err.message || ''));
+      const msg = aborted
+        ? t('session.exportCancelled', s.lang)
+        : tFmt('session.exportFailed', s.lang, { error: err && err.message || String(err) });
+      window.__showToast && window.__showToast(msg, aborted ? undefined : 'error');
+    } finally {
+      exportBtn.disabled = false;
+    }
+  });
 
   startSummarize();
 

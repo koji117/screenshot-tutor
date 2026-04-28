@@ -1,26 +1,34 @@
 // js/components/synthesis.js
 // Cross-session synthesis view. Reads all past summaries (newest first)
 // and asks the worker to produce a "what you've been studying" recap.
+// When the synthesis finishes, the source sessions are archived (removed
+// from in-app history) — they can be preserved beforehand by exporting
+// individual sessions to Obsidian, or by exporting the synthesis itself.
 
 import { setMarkdown } from './markdown.js';
 import { t, tFmt } from '../i18n.js';
-import { getSettings, getSessions } from '../store.js';
+import { getSettings, getSessions, deleteSession } from '../store.js';
+import { exportSynthesis, isFileSystemAccessSupported } from '../exports.js';
 
-export function mountSynthesis(container, { worker }) {
+export function mountSynthesis(container, { worker, onAfterClear }) {
   const s = getSettings();
   const sessions = getSessions();
-  const summaries = sessions
-    .map((sess) => sess.summary)
-    .filter((sum) => sum && sum.trim().length > 0);
+  const usable = sessions.filter((sess) => sess.summary && sess.summary.trim().length > 0);
+  const summaries = usable.map((sess) => sess.summary);
+  const usedIds = usable.map((sess) => sess.id);
+  const sessionCount = summaries.length;
 
   container.innerHTML = `
     <div class="synthesis">
       <h2 class="synthesis-heading">${t('synthesis.heading', s.lang)}</h2>
-      <p class="synthesis-sub muted">${tFmt('synthesis.subheading', s.lang, { count: summaries.length })}</p>
+      <p class="synthesis-sub muted">${tFmt('synthesis.subheading', s.lang, { count: sessionCount })}</p>
       <div id="synthesis-status" class="muted"></div>
       <div id="synthesis-out" class="markdown-out"></div>
       <div class="session-actions">
         <button id="synthesis-cancel" style="display:none" type="button">${t('session.cancel', s.lang)}</button>
+        <button id="synthesis-export" type="button" disabled>
+          ${t('synthesis.export', s.lang)}
+        </button>
       </div>
     </div>
   `;
@@ -28,15 +36,27 @@ export function mountSynthesis(container, { worker }) {
   const status = container.querySelector('#synthesis-status');
   const outEl = container.querySelector('#synthesis-out');
   const cancelBtn = container.querySelector('#synthesis-cancel');
+  const exportBtn = container.querySelector('#synthesis-export');
 
-  if (summaries.length < 2) {
+  if (sessionCount < 2) {
     status.textContent = t('synthesis.notEnough', s.lang);
     return { destroy() {} };
   }
 
   let streamedText = '';
   let currentRequestId = null;
+  let archivedYet = false;
   const requestId = Math.floor(Math.random() * 1_000_000) + 1;
+
+  function archiveSources() {
+    if (archivedYet) return;
+    archivedYet = true;
+    for (const id of usedIds) deleteSession(id);
+    if (onAfterClear) onAfterClear();
+    if (window.__showToast) {
+      window.__showToast(tFmt('synthesis.archived', s.lang, { count: usedIds.length }));
+    }
+  }
 
   function onWorkerMessage(e) {
     const m = e.data;
@@ -60,10 +80,18 @@ export function mountSynthesis(container, { worker }) {
       streamedText += m.text;
       setMarkdown(outEl, streamedText);
     }
-    else if (m.type === 'done' || m.type === 'cancelled') {
+    else if (m.type === 'done') {
       status.textContent = '';
       cancelBtn.style.display = 'none';
       currentRequestId = null;
+      if (isFileSystemAccessSupported()) exportBtn.disabled = false;
+      archiveSources();
+    }
+    else if (m.type === 'cancelled') {
+      status.textContent = '';
+      cancelBtn.style.display = 'none';
+      currentRequestId = null;
+      // Cancelled mid-generation: don't archive — the synthesis is incomplete.
     }
     else if (m.type === 'error') {
       status.textContent = tFmt('session.errorWorker', s.lang, { error: m.error });
@@ -78,6 +106,28 @@ export function mountSynthesis(container, { worker }) {
   cancelBtn.addEventListener('click', () => {
     if (currentRequestId !== null) {
       worker.postMessage({ type: 'cancel', requestId: currentRequestId });
+    }
+  });
+
+  exportBtn.addEventListener('click', async () => {
+    if (!isFileSystemAccessSupported()) {
+      window.__showToast && window.__showToast(t('session.exportNotSupported', s.lang), 'error');
+      return;
+    }
+    exportBtn.disabled = true;
+    try {
+      const { filename } = await exportSynthesis(streamedText, sessionCount);
+      window.__showToast && window.__showToast(
+        tFmt('session.exportSuccess', s.lang, { filename })
+      );
+    } catch (err) {
+      const aborted = err && (err.name === 'AbortError' || /aborted|denied/i.test(err.message || ''));
+      const msg = aborted
+        ? t('session.exportCancelled', s.lang)
+        : tFmt('session.exportFailed', s.lang, { error: err && err.message || String(err) });
+      window.__showToast && window.__showToast(msg, aborted ? undefined : 'error');
+    } finally {
+      exportBtn.disabled = false;
     }
   });
 
