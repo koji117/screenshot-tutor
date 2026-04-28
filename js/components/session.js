@@ -86,6 +86,32 @@ export function mountSession(container, { worker, sessionId }) {
   let chatStreamingEl = null;
   let chatStreamingText = '';
 
+  // requestAnimationFrame-coalesced rendering. setMarkdown re-parses the
+  // full accumulated text on every call, so doing it per-token is O(N²).
+  // Tokens just append to the buffer (cheap) and schedule a single render
+  // for the next frame. Multiple tokens within one frame collapse into
+  // one parse + innerHTML write.
+  let rafHandle = null;
+  function renderActiveOp() {
+    if (activeOp === 'summarize') setMarkdown(summaryEl, streamedText);
+    else if (activeOp === 'breakdown') setMarkdown(breakdownEl, breakdownText);
+    else if (activeOp === 'chat' && chatStreamingEl) setMarkdown(chatStreamingEl, chatStreamingText);
+  }
+  function scheduleRender() {
+    if (rafHandle != null) return;
+    rafHandle = requestAnimationFrame(() => {
+      rafHandle = null;
+      renderActiveOp();
+    });
+  }
+  function flushRender() {
+    if (rafHandle != null) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = null;
+    }
+    renderActiveOp();
+  }
+
   // Remember the last attempted post so we can retry on a transient `busy`
   // error. Set whenever we post a new request; cleared on done/cancelled.
   let lastPost = null;
@@ -134,18 +160,13 @@ export function mountSession(container, { worker, sessionId }) {
       setControlsBusy(true);
     }
     else if (m.type === 'token') {
-      if (activeOp === 'summarize') {
-        streamedText += m.text;
-        setMarkdown(summaryEl, streamedText);
-      } else if (activeOp === 'breakdown') {
-        breakdownText += m.text;
-        setMarkdown(breakdownEl, breakdownText);
-      } else if (activeOp === 'chat') {
-        chatStreamingText += m.text;
-        if (chatStreamingEl) setMarkdown(chatStreamingEl, chatStreamingText);
-      }
+      if (activeOp === 'summarize') streamedText += m.text;
+      else if (activeOp === 'breakdown') breakdownText += m.text;
+      else if (activeOp === 'chat') chatStreamingText += m.text;
+      scheduleRender();
     }
     else if (m.type === 'done' || m.type === 'cancelled') {
+      flushRender();
       status.textContent = '';
       cancelBtn.style.display = 'none';
       currentRequestId = null;
@@ -327,6 +348,10 @@ export function mountSession(container, { worker, sessionId }) {
   return {
     destroy() {
       worker.removeEventListener('message', onWorkerMessage);
+      if (rafHandle != null) {
+        cancelAnimationFrame(rafHandle);
+        rafHandle = null;
+      }
       if (currentRequestId !== null) {
         worker.postMessage({ type: 'cancel', requestId: currentRequestId });
       }

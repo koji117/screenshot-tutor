@@ -40,10 +40,21 @@ let inFlight = false;
 // Required because the processor's image pipeline expects a RawImage; if you
 // pass a raw ImageBitmap, the processor silently ignores it and the model
 // receives only text — producing replies like "please provide a screenshot".
+//
+// 1-entry cache: consecutive ops on the same screenshot (summarize →
+// breakdown → chat) reuse the decoded RawImage instead of refetching and
+// redecoding the JPEG each time. A 1280x720 RGBA RawImage is ~3.7MB;
+// holding one in worker memory is cheap relative to the model.
+let cachedImageDataUrl = null;
+let cachedImage = null;
 async function dataUrlToRawImage(dataUrl) {
+  if (dataUrl === cachedImageDataUrl && cachedImage) return cachedImage;
   const res = await fetch(dataUrl);
   const blob = await res.blob();
-  return await RawImage.fromBlob(blob);
+  const image = await RawImage.fromBlob(blob);
+  cachedImageDataUrl = dataUrl;
+  cachedImage = image;
+  return image;
 }
 
 async function loadModel(which) {
@@ -113,38 +124,58 @@ async function buildInputs(image, text) {
       '<end_of_turn>\n<start_of_turn>model\n';
   }
 
-  // Diagnostic: surface what the template produced and what the
-  // processor returned. Logged via console.log so it shows up in
-  // DevTools under the worker's context.
-  console.log('[buildInputs] image:', image && image.constructor && image.constructor.name,
-    image && `${image.width}x${image.height} channels=${image.channels}`);
-  console.log('[buildInputs] prompt (first 300 chars):', promptStr.slice(0, 300));
-
   const inputs = await processor(promptStr, [image]);
 
-  console.log('[buildInputs] inputs keys:', Object.keys(inputs));
-  if (inputs.pixel_values) {
-    const pv = inputs.pixel_values;
-    console.log('[buildInputs] pixel_values dims:', pv.dims || pv.shape, 'type:', pv.constructor && pv.constructor.name);
-  } else {
-    console.warn('[buildInputs] NO pixel_values in inputs — image was not processed!');
-  }
-  if (inputs.input_ids) {
-    const ids = inputs.input_ids;
-    console.log('[buildInputs] input_ids dims:', ids.dims || ids.shape);
+  // Keep one safety log: if the processor didn't compute pixel_values,
+  // the model is about to generate text-only, which usually shows up
+  // as "please provide a screenshot" replies. Catch it early.
+  if (!inputs.pixel_values) {
+    console.warn('[buildInputs] NO pixel_values in inputs — image was not processed by the chat template');
   }
 
   return inputs;
 }
 
-// Stream generation with end-of-turn buffering. The streamer may deliver a
-// marker like "<end_of_turn>" in pieces, so we keep up to MAX_MARKER_LEN
-// chars unflushed in case it's the start of a marker.
+// Stream generation with end-of-turn buffering AND post-batching. Two
+// independent buffers:
+//
+//   pending     — marker buffer. The TextStreamer can deliver an EOT
+//                 marker like "<end_of_turn>" in pieces, so we hold up
+//                 to MAX_MARKER_LEN trailing chars until we know they
+//                 are not the start of a marker.
+//
+//   postBuffer  — postMessage batch buffer. Posting one message per
+//                 token (Gemma emits ~1-3 chars/token) creates 500+
+//                 worker → main hops per response. We coalesce into
+//                 ~16ms windows so the main thread sees ~60 chunks/s
+//                 and renders at 60Hz max.
 function makeStreamer(requestId, eosTokenId) {
   const MARKERS = ['<end_of_turn>', '<start_of_turn>'];
   const MAX_MARKER_LEN = Math.max(...MARKERS.map((m) => m.length));
+  const POST_INTERVAL_MS = 16;
+
   let pending = '';
   let turnStopped = false;
+  let postBuffer = '';
+  let postTimer = null;
+
+  function flushPostBuffer() {
+    if (postTimer != null) {
+      clearTimeout(postTimer);
+      postTimer = null;
+    }
+    if (postBuffer.length > 0) {
+      self.postMessage({ type: 'token', requestId, text: postBuffer });
+      postBuffer = '';
+    }
+  }
+
+  function emit(text) {
+    postBuffer += text;
+    if (postTimer == null) {
+      postTimer = setTimeout(flushPostBuffer, POST_INTERVAL_MS);
+    }
+  }
 
   return {
     streamer: new TextStreamer(processor.tokenizer, {
@@ -160,7 +191,8 @@ function makeStreamer(requestId, eosTokenId) {
         }
         if (cutAt >= 0) {
           const before = pending.slice(0, cutAt);
-          if (before) self.postMessage({ type: 'token', requestId, text: before });
+          if (before) emit(before);
+          flushPostBuffer();
           pending = '';
           turnStopped = true;
           if (stoppingCriteria) {
@@ -180,15 +212,16 @@ function makeStreamer(requestId, eosTokenId) {
         if (safeLen > 0) {
           const out = pending.slice(0, safeLen);
           pending = pending.slice(safeLen);
-          self.postMessage({ type: 'token', requestId, text: out });
+          emit(out);
         }
       },
     }),
     flush() {
       if (!turnStopped && pending && !cancelRequested) {
-        self.postMessage({ type: 'token', requestId, text: pending });
+        emit(pending);
         pending = '';
       }
+      flushPostBuffer();
     },
   };
 }

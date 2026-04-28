@@ -48,6 +48,24 @@ export function mountSynthesis(container, { worker, onAfterClear }) {
   let archivedYet = false;
   const requestId = Math.floor(Math.random() * 1_000_000) + 1;
 
+  // requestAnimationFrame-coalesced rendering (see session.js for the
+  // rationale — setMarkdown is O(N) per call, doing it per token is O(N²)).
+  let rafHandle = null;
+  function scheduleRender() {
+    if (rafHandle != null) return;
+    rafHandle = requestAnimationFrame(() => {
+      rafHandle = null;
+      setMarkdown(outEl, streamedText);
+    });
+  }
+  function flushRender() {
+    if (rafHandle != null) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = null;
+    }
+    setMarkdown(outEl, streamedText);
+  }
+
   function archiveSources() {
     if (archivedYet) return;
     archivedYet = true;
@@ -78,9 +96,10 @@ export function mountSynthesis(container, { worker, onAfterClear }) {
     }
     else if (m.type === 'token') {
       streamedText += m.text;
-      setMarkdown(outEl, streamedText);
+      scheduleRender();
     }
     else if (m.type === 'done') {
+      flushRender();
       status.textContent = '';
       cancelBtn.style.display = 'none';
       currentRequestId = null;
@@ -88,6 +107,7 @@ export function mountSynthesis(container, { worker, onAfterClear }) {
       archiveSources();
     }
     else if (m.type === 'cancelled') {
+      flushRender();
       status.textContent = '';
       cancelBtn.style.display = 'none';
       currentRequestId = null;
@@ -145,6 +165,10 @@ export function mountSynthesis(container, { worker, onAfterClear }) {
   return {
     destroy() {
       worker.removeEventListener('message', onWorkerMessage);
+      if (rafHandle != null) {
+        cancelAnimationFrame(rafHandle);
+        rafHandle = null;
+      }
       if (currentRequestId !== null) {
         worker.postMessage({ type: 'cancel', requestId: currentRequestId });
       }
