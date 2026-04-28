@@ -1,0 +1,246 @@
+// js/worker.js
+// Web Worker that hosts Gemma 4 multimodal via Transformers.js.
+//
+// Verified Transformers.js version: 4.2.0
+// Verified MODEL_REPOS: onnx-community/gemma-4-E2B-it-ONNX,
+//   onnx-community/gemma-4-E4B-it-ONNX
+//
+// Multimodal note: Gemma 4 is "any-to-any". The processor accepts both
+// images and text. We use processor.apply_chat_template() with the
+// multimodal content format. If that throws (Jinja template issues like
+// the one the reference app hit), the catch path falls back to manual
+// prompt assembly using <start_of_turn> markers and the image token.
+
+import {
+  AutoProcessor,
+  Gemma4ForConditionalGeneration,
+  TextStreamer,
+  InterruptableStoppingCriteria,
+  env,
+} from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
+
+env.allowLocalModels = false;
+env.useBrowserCache = true;
+
+const MODEL_REPOS = {
+  e2b: 'onnx-community/gemma-4-E2B-it-ONNX',
+  e4b: 'onnx-community/gemma-4-E4B-it-ONNX',
+};
+
+let processor = null;
+let model = null;
+let currentModel = null;
+let cancelRequested = false;
+let stoppingCriteria = null;
+let inFlight = false;
+
+async function loadModel(which) {
+  if (model && processor && currentModel === which) return;
+  const repoId = MODEL_REPOS[which];
+  if (!repoId) throw new Error('unknown model: ' + which);
+
+  const progressCallback = (info) => {
+    try {
+      if (!info) return;
+      let pct = null;
+      if (typeof info.progress === 'number') pct = info.progress;
+      else if (info.status === 'progress' && typeof info.loaded === 'number'
+                && typeof info.total === 'number' && info.total > 0) {
+        pct = (info.loaded / info.total) * 100;
+      }
+      if (pct !== null) self.postMessage({ type: 'loading', pct: Math.round(pct) });
+    } catch {}
+  };
+
+  processor = await AutoProcessor.from_pretrained(repoId, {
+    progress_callback: progressCallback,
+  });
+  model = await Gemma4ForConditionalGeneration.from_pretrained(repoId, {
+    dtype: 'q4f16',
+    device: 'webgpu',
+    progress_callback: progressCallback,
+  });
+  currentModel = which;
+}
+
+// Build inputs for a single-turn user message containing image + text.
+// Tries apply_chat_template first, falls back to manual prompt assembly.
+async function buildInputs(image, text) {
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        { type: 'image', image },
+        { type: 'text', text },
+      ],
+    },
+  ];
+
+  try {
+    return await processor.apply_chat_template(messages, {
+      add_generation_prompt: true,
+      tokenize: true,
+      return_dict: true,
+      return_tensors: 'pt',
+    });
+  } catch (err) {
+    // Fallback: manual prompt assembly. Gemma 4 uses <image_soft_token>
+    // as the placeholder for image embeddings. The processor still needs
+    // to be called with both image and text to compute image features.
+    self.postMessage({
+      type: 'warn',
+      message: 'apply_chat_template failed, using manual fallback: ' + (err && err.message),
+    });
+    const prompt =
+      '<bos><start_of_turn>user\n<image_soft_token>\n' + text.trim() +
+      '<end_of_turn>\n<start_of_turn>model\n';
+    return await processor(prompt, image, null, { add_special_tokens: false });
+  }
+}
+
+// Stream generation with end-of-turn buffering. The streamer may deliver a
+// marker like "<end_of_turn>" in pieces, so we keep up to MAX_MARKER_LEN
+// chars unflushed in case it's the start of a marker.
+function makeStreamer(requestId, eosTokenId) {
+  const MARKERS = ['<end_of_turn>', '<start_of_turn>'];
+  const MAX_MARKER_LEN = Math.max(...MARKERS.map((m) => m.length));
+  let pending = '';
+  let turnStopped = false;
+
+  return {
+    streamer: new TextStreamer(processor.tokenizer, {
+      skip_prompt: true,
+      skip_special_tokens: true,
+      callback_function: (text) => {
+        if (cancelRequested || turnStopped) return;
+        pending += text;
+        let cutAt = -1;
+        for (const m of MARKERS) {
+          const i = pending.indexOf(m);
+          if (i >= 0 && (cutAt < 0 || i < cutAt)) cutAt = i;
+        }
+        if (cutAt >= 0) {
+          const before = pending.slice(0, cutAt);
+          if (before) self.postMessage({ type: 'token', requestId, text: before });
+          pending = '';
+          turnStopped = true;
+          if (stoppingCriteria) {
+            try { stoppingCriteria.interrupt(); } catch {}
+          }
+          return;
+        }
+        let keepFromEnd = 0;
+        for (let len = Math.min(MAX_MARKER_LEN, pending.length); len >= 1; len--) {
+          const tail = pending.slice(pending.length - len);
+          if (MARKERS.some((m) => m.startsWith(tail))) {
+            keepFromEnd = len;
+            break;
+          }
+        }
+        const safeLen = pending.length - keepFromEnd;
+        if (safeLen > 0) {
+          const out = pending.slice(0, safeLen);
+          pending = pending.slice(safeLen);
+          self.postMessage({ type: 'token', requestId, text: out });
+        }
+      },
+    }),
+    flush() {
+      if (!turnStopped && pending && !cancelRequested) {
+        self.postMessage({ type: 'token', requestId, text: pending });
+        pending = '';
+      }
+    },
+  };
+}
+
+self.onmessage = async (e) => {
+  const msg = e.data || {};
+  try {
+    if (msg.type === 'load') {
+      await loadModel(msg.model || 'e2b');
+      self.postMessage({ type: 'ready' });
+      return;
+    }
+
+    if (msg.type === 'summarize') {
+      if (inFlight) {
+        self.postMessage({ type: 'error', error: 'busy', requestId: msg.requestId });
+        return;
+      }
+      inFlight = true;
+      const { requestId, image, lang, model: which } = msg;
+      try {
+        cancelRequested = false;
+        stoppingCriteria = new InterruptableStoppingCriteria();
+        await loadModel(which || 'e2b');
+        self.postMessage({ type: 'started', requestId });
+
+        // Hardcoded summary prompt for the vertical slice. Replaced in a
+        // later task by prompts.js with EN/JA variants.
+        const promptText = (lang === 'ja')
+          ? 'このスクリーンショットを学習者向けに要約してください。最初に太字で1文のTL;DR、その後に3〜5個の重要なポイントを箇条書きで。200語以内。'
+          : 'You are a study tutor. Summarize this screenshot in markdown. First a one-sentence TL;DR (bold), then 3-5 key bullet points. Under 200 words.';
+
+        const inputs = await buildInputs(image, promptText);
+
+        let eosTokenId;
+        try {
+          const ids = processor.tokenizer.encode('<end_of_turn>', { add_special_tokens: false });
+          if (Array.isArray(ids) && ids.length > 0) eosTokenId = ids[0];
+        } catch {}
+
+        const { streamer, flush } = makeStreamer(requestId, eosTokenId);
+
+        await model.generate({
+          ...inputs,
+          max_new_tokens: 512,
+          do_sample: false,
+          streamer,
+          stopping_criteria: stoppingCriteria,
+          ...(eosTokenId ? { eos_token_id: eosTokenId } : {}),
+        });
+
+        flush();
+
+        if (cancelRequested) {
+          self.postMessage({ type: 'cancelled', requestId });
+        } else {
+          self.postMessage({ type: 'done', requestId });
+        }
+      } finally {
+        stoppingCriteria = null;
+        inFlight = false;
+      }
+      return;
+    }
+
+    if (msg.type === 'cancel') {
+      cancelRequested = true;
+      if (stoppingCriteria) {
+        try { stoppingCriteria.interrupt(); } catch {}
+      }
+      return;
+    }
+
+    if (msg.type === 'unload') {
+      if (model && typeof model.dispose === 'function') {
+        try { await model.dispose(); } catch {}
+      }
+      model = null;
+      processor = null;
+      currentModel = null;
+      self.postMessage({ type: 'unloaded' });
+      return;
+    }
+
+    self.postMessage({ type: 'error', error: 'unknown message type: ' + msg.type });
+  } catch (err) {
+    console.error('[worker] error:', err);
+    self.postMessage({
+      type: 'error',
+      error: (err && err.message) || String(err),
+      requestId: msg.requestId,
+    });
+  }
+};
