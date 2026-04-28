@@ -1,13 +1,15 @@
 // js/app.js
-// App bootstrap. Wires topbar + empty state + session.
+// App bootstrap. Wires topbar + history drawer + empty state + session.
 import { mountTopbar } from './components/topbar.js';
 import { mountEmptyState } from './components/empty-state.js';
 import { mountSession } from './components/session.js';
+import { mountHistory } from './components/history.js';
 import { addSession } from './store.js';
 
 const root = document.getElementById('app');
 root.innerHTML = `
   <div id="topbar-root"></div>
+  <div id="history-root"></div>
   <main class="main" id="main-root"></main>
 `;
 
@@ -27,6 +29,7 @@ function showEmpty() {
         image: result.image,
         imageThumb: result.thumb,
       });
+      historyMount.refresh();
       showSession(session.id);
     },
   });
@@ -39,9 +42,13 @@ function showSession(sessionId) {
   activeSessionMount = mountSession(main, { worker, sessionId });
 }
 
+const historyMount = mountHistory(document.getElementById('history-root'), {
+  onSelect: (id) => showSession(id),
+});
+
 mountTopbar(document.getElementById('topbar-root'), {
   onNewSession: showEmpty,
-  onToggleHistory: () => alert('history drawer comes in a later task'),
+  onToggleHistory: () => historyMount.toggle(),
 });
 
 showEmpty();
