@@ -334,7 +334,12 @@ select:focus-visible,
 
 #session-status.error { color: var(--error); }
 
-.session-actions { margin-top: var(--s-5); }
+.session-actions {
+  margin-top: var(--s-5);
+  display: flex;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
 
 .session-actions button {
   padding: 6px 14px;
@@ -346,10 +351,15 @@ select:focus-visible,
   transition: all var(--d-fast) var(--ease-out);
 }
 
-.session-actions button:hover {
+.session-actions button:hover:not(:disabled) {
   background: var(--surface-1);
   border-color: var(--line-strong);
   color: var(--ink-0);
+}
+
+.session-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 #session-breakdown-btn {
