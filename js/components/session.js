@@ -90,10 +90,24 @@ export function mountSession(container, { worker, sessionId }) {
 
   function onWorkerMessage(e) {
     const m = e.data;
-    if (currentRequestId !== null && m.requestId !== currentRequestId) return;
 
-    if (m.type === 'loading') status.textContent = tFmt('session.loading', s.lang, { pct: m.pct });
-    else if (m.type === 'ready') status.textContent = '';
+    // 'loading' is broadcast during model download; it carries no
+    // requestId and is relevant whenever any operation is queued.
+    if (m.type === 'loading') {
+      if (activeOp || currentRequestId !== null) {
+        status.textContent = tFmt('session.loading', s.lang, { pct: m.pct });
+      }
+      return;
+    }
+
+    // For every other message: ignore unless it belongs to our current
+    // request. This prevents stale events from a previous (cancelled)
+    // request — which the worker may emit after we've moved on — from
+    // mutating state in the new request, especially during the 800ms
+    // busy-retry window when currentRequestId is briefly null.
+    if (m.requestId == null || m.requestId !== currentRequestId) return;
+
+    if (m.type === 'ready') status.textContent = '';
     else if (m.type === 'started') {
       if (activeOp === 'summarize') {
         streamedText = '';
