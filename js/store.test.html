@@ -1,0 +1,109 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>store.js unit tests</title>
+  <style>
+    body { font-family: monospace; padding: 2em; max-width: 900px; }
+    .pass { color: green; }
+    .fail { color: red; font-weight: bold; }
+    pre { background: #f4f4f4; padding: 0.5em; }
+  </style>
+</head>
+<body>
+  <h1>store.js — unit tests</h1>
+  <div id="out"></div>
+  <script type="module">
+    import {
+      getSettings, setSettings, KEYS,
+      getSessions, getSession, addSession, updateSession, deleteSession,
+      SESSION_LIMIT,
+    } from './store.js';
+
+    const out = document.getElementById('out');
+    let passed = 0, failed = 0;
+
+    function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+    function assert(name, actual, expected) {
+      const ok = eq(actual, expected);
+      const line = document.createElement('div');
+      line.className = ok ? 'pass' : 'fail';
+      line.textContent = (ok ? '✓ ' : '✗ ') + name;
+      out.appendChild(line);
+      if (!ok) {
+        const pre = document.createElement('pre');
+        pre.textContent = 'expected: ' + JSON.stringify(expected) + '\n  actual: ' + JSON.stringify(actual);
+        out.appendChild(pre);
+        failed++;
+      } else passed++;
+    }
+    function reset() { Object.values(KEYS).forEach(k => localStorage.removeItem(k)); }
+    function resetSessions() { localStorage.removeItem(KEYS.sessions); }
+
+    // --- Settings ---
+    reset();
+    assert('settings defaults', getSettings(), { model: 'e4b', lang: 'en', historyOpen: false });
+
+    reset();
+    setSettings({ model: 'e2b', lang: 'ja', historyOpen: true });
+    assert('settings persisted', getSettings(), { model: 'e2b', lang: 'ja', historyOpen: true });
+
+    reset();
+    setSettings({ model: 'e4b', lang: 'en', historyOpen: false });
+    setSettings({ lang: 'ja' });
+    assert('partial update merges', getSettings(), { model: 'e4b', lang: 'ja', historyOpen: false });
+
+    reset();
+    setSettings({ model: 'bogus' });
+    assert('invalid model rejected', getSettings().model, 'e4b');
+
+    reset();
+    setSettings({ lang: 'fr' });
+    assert('invalid lang rejected', getSettings().lang, 'en');
+
+    reset();
+    localStorage.setItem(KEYS.settings, '{not json');
+    assert('corrupted JSON falls back', getSettings(), { model: 'e4b', lang: 'en', historyOpen: false });
+
+    // --- Sessions ---
+    resetSessions();
+    assert('sessions empty by default', getSessions(), []);
+
+    resetSessions();
+    const s1 = addSession({ image: 'data:image/jpeg;base64,a', imageThumb: 'data:image/jpeg;base64,t', summary: 'hello' });
+    assert('addSession returns object with id', typeof s1.id, 'string');
+    assert('getSession finds it', getSession(s1.id).summary, 'hello');
+
+    resetSessions();
+    addSession({ image: 'a', imageThumb: 't', summary: 'first' });
+    await new Promise(r => setTimeout(r, 5));
+    addSession({ image: 'a', imageThumb: 't', summary: 'second' });
+    assert('newest first', getSessions()[0].summary, 'second');
+
+    resetSessions();
+    const s2 = addSession({ image: 'a', imageThumb: 't', summary: 'before' });
+    updateSession(s2.id, { summary: 'after', breakdown: 'b' });
+    const u = getSession(s2.id);
+    assert('updateSession merges summary', u.summary, 'after');
+    assert('updateSession merges breakdown', u.breakdown, 'b');
+    assert('updateSession preserves image', u.image, 'a');
+
+    resetSessions();
+    const s3 = addSession({ image: 'a', imageThumb: 't', summary: 'x' });
+    deleteSession(s3.id);
+    assert('deleteSession removes', getSession(s3.id), null);
+
+    resetSessions();
+    for (let i = 0; i < SESSION_LIMIT + 5; i++) {
+      addSession({ image: 'tiny', imageThumb: 'tiny', summary: 'n=' + i });
+    }
+    assert('cap at SESSION_LIMIT', getSessions().length, SESSION_LIMIT);
+    assert('newest preserved', getSessions()[0].summary, 'n=' + (SESSION_LIMIT + 4));
+
+    const summary = document.createElement('h2');
+    summary.textContent = `${passed} passed, ${failed} failed`;
+    summary.style.color = failed ? 'red' : 'green';
+    out.appendChild(summary);
+  </script>
+</body>
+</html>
