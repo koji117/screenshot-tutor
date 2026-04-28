@@ -185,15 +185,16 @@ export function mountSession(container, { worker, sessionId }) {
   }
 
   async function postSummarize() {
-    const blob = await (await fetch(sess.image)).blob();
-    const bitmap = await createImageBitmap(blob);
     const requestId = nextRequestId++;
     currentRequestId = requestId;
     activeOp = 'summarize';
-    worker.postMessage(
-      { type: 'summarize', requestId, image: bitmap, lang: s.lang, model: s.model },
-      [bitmap],
-    );
+    worker.postMessage({
+      type: 'summarize',
+      requestId,
+      imageDataUrl: sess.image,
+      lang: s.lang,
+      model: s.model,
+    });
   }
 
   async function startBreakdown() {
@@ -212,22 +213,17 @@ export function mountSession(container, { worker, sessionId }) {
   async function postBreakdown() {
     const current = getSession(sessionId);
     if (!current) return;
-    const blob = await (await fetch(current.image)).blob();
-    const bitmap = await createImageBitmap(blob);
     const requestId = nextRequestId++;
     currentRequestId = requestId;
     activeOp = 'breakdown';
-    worker.postMessage(
-      {
-        type: 'breakdown',
-        requestId,
-        image: bitmap,
-        summary: current.summary || '',
-        lang: s.lang,
-        model: s.model,
-      },
-      [bitmap],
-    );
+    worker.postMessage({
+      type: 'breakdown',
+      requestId,
+      imageDataUrl: current.image,
+      summary: current.summary || '',
+      lang: s.lang,
+      model: s.model,
+    });
   }
 
   async function startChat(userText) {
@@ -255,24 +251,19 @@ export function mountSession(container, { worker, sessionId }) {
   async function postChat(historyBefore, userText) {
     const current = getSession(sessionId);
     if (!current) return;
-    const blob = await (await fetch(current.image)).blob();
-    const bitmap = await createImageBitmap(blob);
     const requestId = nextRequestId++;
     currentRequestId = requestId;
     activeOp = 'chat';
-    worker.postMessage(
-      {
-        type: 'chat',
-        requestId,
-        image: bitmap,
-        summary: current.summary || '',
-        history: historyBefore,
-        userMessage: userText,
-        lang: s.lang,
-        model: s.model,
-      },
-      [bitmap],
-    );
+    worker.postMessage({
+      type: 'chat',
+      requestId,
+      imageDataUrl: current.image,
+      summary: current.summary || '',
+      history: historyBefore,
+      userMessage: userText,
+      lang: s.lang,
+      model: s.model,
+    });
   }
 
   chatForm.addEventListener('submit', (e) => {

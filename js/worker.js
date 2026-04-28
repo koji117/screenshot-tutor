@@ -16,6 +16,7 @@ import {
   Gemma4ForConditionalGeneration,
   TextStreamer,
   InterruptableStoppingCriteria,
+  RawImage,
   env,
 } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
 import { summarizePrompt, breakdownPrompt, chatSystemPrompt } from './prompts.js';
@@ -34,6 +35,16 @@ let currentModel = null;
 let cancelRequested = false;
 let stoppingCriteria = null;
 let inFlight = false;
+
+// Convert a data URL (or any fetchable URL) to a Transformers.js RawImage.
+// Required because the processor's image pipeline expects a RawImage; if you
+// pass a raw ImageBitmap, the processor silently ignores it and the model
+// receives only text — producing replies like "please provide a screenshot".
+async function dataUrlToRawImage(dataUrl) {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  return await RawImage.fromBlob(blob);
+}
 
 async function loadModel(which) {
   if (model && processor && currentModel === which) return;
@@ -170,13 +181,14 @@ self.onmessage = async (e) => {
         return;
       }
       inFlight = true;
-      const { requestId, image, lang, model: which } = msg;
+      const { requestId, imageDataUrl, lang, model: which } = msg;
       try {
         cancelRequested = false;
         stoppingCriteria = new InterruptableStoppingCriteria();
         await loadModel(which || 'e2b');
         self.postMessage({ type: 'started', requestId });
 
+        const image = await dataUrlToRawImage(imageDataUrl);
         const promptText = summarizePrompt(lang);
 
         const inputs = await buildInputs(image, promptText);
@@ -218,13 +230,14 @@ self.onmessage = async (e) => {
         return;
       }
       inFlight = true;
-      const { requestId, image, summary, lang, model: which } = msg;
+      const { requestId, imageDataUrl, summary, lang, model: which } = msg;
       try {
         cancelRequested = false;
         stoppingCriteria = new InterruptableStoppingCriteria();
         await loadModel(which || 'e2b');
         self.postMessage({ type: 'started', requestId });
 
+        const image = await dataUrlToRawImage(imageDataUrl);
         const promptText = breakdownPrompt(lang, summary || '');
         const inputs = await buildInputs(image, promptText);
 
@@ -261,13 +274,14 @@ self.onmessage = async (e) => {
         return;
       }
       inFlight = true;
-      const { requestId, image, summary, history, userMessage, lang, model: which } = msg;
+      const { requestId, imageDataUrl, summary, history, userMessage, lang, model: which } = msg;
       try {
         cancelRequested = false;
         stoppingCriteria = new InterruptableStoppingCriteria();
         await loadModel(which || 'e2b');
         self.postMessage({ type: 'started', requestId });
 
+        const image = await dataUrlToRawImage(imageDataUrl);
         const sys = chatSystemPrompt(lang, summary || '');
 
         // Compose chat as role-tagged turns. The image attaches to the
