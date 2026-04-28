@@ -31,13 +31,13 @@ function showToast(message, kind) {
 // Expose toast helper for components without threading it through props.
 window.__showToast = showToast;
 
-let worker = createWorker();
-
 // Bump WORKER_VERSION when js/worker.js or its imports change in a way
 // that needs a fresh fetch. Browsers cache the Worker script separately
 // from the page, so a plain Cmd+Shift+R won't necessarily pick up a new
 // worker.js — adding ?v=N forces the browser to treat it as a new URL.
 const WORKER_VERSION = 3;
+
+let worker = createWorker();
 
 function createWorker() {
   const url = new URL('./worker.js', import.meta.url);
