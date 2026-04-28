@@ -1,12 +1,14 @@
 // js/app.js
 // Vertical slice: paste → normalize → worker.summarize → streamed display.
-import { installInputHandlers } from './input.js';
+import { installInputHandlers, captureScreen } from './input.js';
 
 const root = document.getElementById('app');
 root.innerHTML = `
   <div class="sandbox" id="zone" tabindex="0">
     <h1>Screenshot Tutor</h1>
-    <p>Paste (Cmd+V), drop, or <button id="pick">pick a file</button>.
+    <p>Paste (Cmd+V), drop,
+       <button id="pick">pick a file</button>, or
+       <button id="capture">📸 Capture screen</button>.
        Model: <select id="model"><option value="e2b">e2b (1.5GB)</option><option value="e4b" selected>e4b (3GB)</option></select>
        Lang: <select id="lang"><option value="en" selected>EN</option><option value="ja">JA</option></select>
        <button id="cancel" style="display:none">Cancel</button>
@@ -78,22 +80,36 @@ async function runSummarize(imageDataUrl) {
   );
 }
 
+async function onImageReady({ image, width, height }) {
+  msg.textContent = '';
+  currentImageDataUrl = image;
+  preview.innerHTML = `<img src="${image}" style="max-width:100%; border:1px solid #ccc;">`;
+  status.textContent = `loaded ${width}x${height}`;
+  output.textContent = '';
+  await runSummarize(image);
+}
+
 const handlers = installInputHandlers(
   zone,
-  async ({ image, width, height }) => {
-    msg.textContent = '';
-    currentImageDataUrl = image;
-    preview.innerHTML = `<img src="${image}" style="max-width:100%; border:1px solid #ccc;">`;
-    status.textContent = `loaded ${width}x${height}`;
-    output.textContent = '';
-    await runSummarize(image);
-  },
-  (err) => {
-    msg.textContent = 'error: ' + err;
-  },
+  onImageReady,
+  (err) => { msg.textContent = 'error: ' + err; },
 );
 
 document.getElementById('pick').addEventListener('click', () => handlers.pickFile());
+
+document.getElementById('capture').addEventListener('click', async () => {
+  msg.textContent = '';
+  try {
+    const result = await captureScreen();
+    if (!result) {
+      msg.textContent = 'capture cancelled';
+      return;
+    }
+    await onImageReady(result);
+  } catch (err) {
+    msg.textContent = 'capture failed: ' + (err.message || err);
+  }
+});
 
 cancelBtn.addEventListener('click', () => {
   if (currentRequestId !== null) {

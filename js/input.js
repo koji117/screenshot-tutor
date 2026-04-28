@@ -39,6 +39,59 @@ export async function normalizeImage(blob) {
   }
 }
 
+// Capture a frame from a screen / window / browser tab via the platform's
+// screen-share picker. The user picks what to share; we grab a single frame
+// and return a normalizeImage() result. Stops the stream immediately after.
+//
+// Returns null if the user cancels the picker.
+export async function captureScreen() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    throw new Error('Screen capture not supported in this browser');
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  } catch (err) {
+    // User cancelled the picker (NotAllowedError / AbortError).
+    return null;
+  }
+  try {
+    const track = stream.getVideoTracks()[0];
+    if (!track) throw new Error('no video track from screen capture');
+
+    // Prefer ImageCapture.grabFrame() when available (Chromium-based).
+    let blob;
+    if (typeof ImageCapture !== 'undefined') {
+      const cap = new ImageCapture(track);
+      const bitmap = await cap.grabFrame();
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext('2d').drawImage(bitmap, 0, 0);
+      bitmap.close();
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    } else {
+      // Fallback: drive a hidden <video>, then draw a frame to canvas.
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+      // Wait one frame so videoWidth/Height are populated.
+      await new Promise((r) => requestAnimationFrame(r));
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      video.pause();
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    }
+    if (!blob) throw new Error('failed to encode captured frame');
+    return await normalizeImage(blob);
+  } finally {
+    stream.getTracks().forEach((t) => t.stop());
+  }
+}
+
 // Returns the first image File from a clipboard or drag DataTransfer.
 function firstImageFromTransfer(dt) {
   if (!dt) return null;
