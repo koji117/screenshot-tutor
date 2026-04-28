@@ -15,12 +15,12 @@ export function mountEmptyState(container, { onImage, onError }) {
       <p class="muted">${t('empty.hint', s.lang)}</p>
       <div class="empty-actions">
         <button id="empty-pick" type="button">${t('empty.pick', s.lang)}</button>
-        <button id="empty-capture" type="button">📸 ${t('empty.capture', s.lang)}</button>
+        <button id="empty-capture" type="button">${t('empty.capture', s.lang)}</button>
       </div>
       ${!supportsWebGPU
-        ? `<p class="error" style="margin-top:1rem">${t('empty.webgpuRequired', s.lang)}</p>`
+        ? `<p class="error">${t('empty.webgpuRequired', s.lang)}</p>`
         : ''}
-      <div id="empty-msg" class="muted" style="margin-top:1rem"></div>
+      <div id="empty-msg" class="muted"></div>
     </div>
   `;
 

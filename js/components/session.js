@@ -20,12 +20,12 @@ export function mountSession(container, { worker, sessionId }) {
       <h2>${t('session.summary', s.lang)}</h2>
       <div id="session-status" class="muted"></div>
       <div id="session-summary" class="markdown-out">${sess.summary || ''}</div>
-      <button id="session-breakdown-btn" class="primary" type="button" style="margin-top:1rem">
+      <button id="session-breakdown-btn" class="primary" type="button">
         ${t('session.breakdown', s.lang)}
       </button>
       <h2 id="session-breakdown-heading" style="display:none">${t('session.breakdown', s.lang)}</h2>
       <div id="session-breakdown" class="markdown-out" style="display:none"></div>
-      <h2 style="margin-top:2rem">Follow-up questions</h2>
+      <h2>${t('session.chatHeading', s.lang)}</h2>
       <div id="session-chat" class="chat"></div>
       <form id="session-chat-form" class="chat-form">
         <input id="session-chat-input" type="text"
@@ -65,7 +65,7 @@ export function mountSession(container, { worker, sessionId }) {
     }
     chatList.innerHTML = current.chat.map((m) => `
       <div class="chat-msg chat-${m.role}">
-        <div class="chat-role">${m.role === 'user' ? '🧑 You' : '🤖 Tutor'}</div>
+        <div class="chat-role">${m.role === 'user' ? t('session.userRole', s.lang) : t('session.assistantRole', s.lang)}</div>
         <div class="chat-text"></div>
       </div>
     `).join('');
@@ -194,7 +194,7 @@ export function mountSession(container, { worker, sessionId }) {
 
     const bubble = document.createElement('div');
     bubble.className = 'chat-msg chat-assistant';
-    bubble.innerHTML = '<div class="chat-role">🤖 Tutor</div><div class="chat-text"></div>';
+    bubble.innerHTML = `<div class="chat-role">${t('session.assistantRole', s.lang)}</div><div class="chat-text"></div>`;
     chatList.appendChild(bubble);
     chatStreamingEl = bubble.querySelector('.chat-text');
     chatStreamingText = '';
