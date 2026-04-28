@@ -14,8 +14,31 @@ root.innerHTML = `
 `;
 
 const main = document.getElementById('main-root');
-const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-worker.onerror = (e) => console.error('worker error:', e);
+
+function showToast(message, kind) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind ? ' toast-' + kind : '');
+  el.textContent = message;
+  document.body.appendChild(el);
+  setTimeout(() => el.classList.add('show'), 10);
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 300);
+  }, 4000);
+}
+
+let worker = createWorker();
+
+function createWorker() {
+  const w = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  w.onerror = (e) => {
+    console.error('worker error:', e);
+    showToast('Worker crashed; respawning. Click New to retry.', 'error');
+    try { w.terminate(); } catch {}
+    setTimeout(() => { worker = createWorker(); }, 200);
+  };
+  return w;
+}
 
 let activeSessionMount = null;
 let activeEmptyMount = null;
@@ -32,6 +55,7 @@ function showEmpty() {
       historyMount.refresh();
       showSession(session.id);
     },
+    onError: (err) => showToast(err, 'error'),
   });
 }
 
