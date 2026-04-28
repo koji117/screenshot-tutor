@@ -39,27 +39,21 @@ export async function normalizeImage(blob) {
   }
 }
 
-// Capture a frame from a screen / window / browser tab via the platform's
-// screen-share picker. The user picks what to share; we grab a single frame
-// and return a normalizeImage() result. Stops the stream immediately after.
-//
-// Returns null if the user cancels the picker.
-export async function captureScreen() {
+// Grab a single frame from a screen-share stream as a PNG Blob.
+async function grabFrameBlob() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
     throw new Error('Screen capture not supported in this browser');
   }
   let stream;
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-  } catch (err) {
-    // User cancelled the picker (NotAllowedError / AbortError).
-    return null;
+  } catch {
+    return null; // user cancelled the picker
   }
   try {
     const track = stream.getVideoTracks()[0];
     if (!track) throw new Error('no video track from screen capture');
 
-    // Prefer ImageCapture.grabFrame() when available (Chromium-based).
     let blob;
     if (typeof ImageCapture !== 'undefined') {
       const cap = new ImageCapture(track);
@@ -71,12 +65,10 @@ export async function captureScreen() {
       bitmap.close();
       blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
     } else {
-      // Fallback: drive a hidden <video>, then draw a frame to canvas.
       const video = document.createElement('video');
       video.srcObject = stream;
       video.muted = true;
       await video.play();
-      // Wait one frame so videoWidth/Height are populated.
       await new Promise((r) => requestAnimationFrame(r));
       const canvas = document.createElement('canvas');
       canvas.width = video.videoWidth;
@@ -86,10 +78,142 @@ export async function captureScreen() {
       blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
     }
     if (!blob) throw new Error('failed to encode captured frame');
-    return await normalizeImage(blob);
+    return blob;
   } finally {
     stream.getTracks().forEach((t) => t.stop());
   }
+}
+
+// Interactive region picker. Shows the blob in a fullscreen overlay; user
+// click-and-drags to select a rectangle. Returns a cropped PNG Blob, the
+// original blob if user picks "Use full image", or null if cancelled.
+async function selectRegion(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const overlay = document.createElement('div');
+    overlay.className = 'capture-overlay';
+    overlay.innerHTML = `
+      <div class="capture-toolbar">
+        <span class="capture-hint">Drag to select a region · Esc to cancel</span>
+        <button type="button" class="capture-confirm" disabled>Use selection</button>
+        <button type="button" class="capture-full">Use full image</button>
+        <button type="button" class="capture-cancel">Cancel</button>
+      </div>
+      <div class="capture-canvas-wrap">
+        <img class="capture-img" alt="captured screenshot">
+        <div class="capture-rect" hidden></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const img = overlay.querySelector('.capture-img');
+    const rectEl = overlay.querySelector('.capture-rect');
+    const wrap = overlay.querySelector('.capture-canvas-wrap');
+    const confirmBtn = overlay.querySelector('.capture-confirm');
+    const fullBtn = overlay.querySelector('.capture-full');
+    const cancelBtn = overlay.querySelector('.capture-cancel');
+
+    img.src = url;
+
+    let startX = 0, startY = 0;
+    let rect = null;
+    let dragging = false;
+
+    function cleanup(result) {
+      URL.revokeObjectURL(url);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(result);
+    }
+
+    function pxFromEvent(e) {
+      const r = img.getBoundingClientRect();
+      const x = Math.max(0, Math.min(r.width, e.clientX - r.left));
+      const y = Math.max(0, Math.min(r.height, e.clientY - r.top));
+      return { x, y };
+    }
+
+    function updateRect() {
+      const imgR = img.getBoundingClientRect();
+      const wrapR = wrap.getBoundingClientRect();
+      rectEl.style.left = (imgR.left - wrapR.left + rect.x) + 'px';
+      rectEl.style.top = (imgR.top - wrapR.top + rect.y) + 'px';
+      rectEl.style.width = rect.w + 'px';
+      rectEl.style.height = rect.h + 'px';
+    }
+
+    function onMouseDown(e) {
+      e.preventDefault();
+      const p = pxFromEvent(e);
+      startX = p.x; startY = p.y;
+      dragging = true;
+      rect = { x: startX, y: startY, w: 0, h: 0 };
+      rectEl.hidden = false;
+      updateRect();
+    }
+    function onMouseMove(e) {
+      if (!dragging) return;
+      const p = pxFromEvent(e);
+      rect.x = Math.min(startX, p.x);
+      rect.y = Math.min(startY, p.y);
+      rect.w = Math.abs(p.x - startX);
+      rect.h = Math.abs(p.y - startY);
+      updateRect();
+    }
+    function onMouseUp() {
+      if (!dragging) return;
+      dragging = false;
+      confirmBtn.disabled = !(rect && rect.w > 4 && rect.h > 4);
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') cleanup(null);
+      else if (e.key === 'Enter' && !confirmBtn.disabled) confirmBtn.click();
+    }
+
+    img.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('keydown', onKey);
+
+    fullBtn.addEventListener('click', () => cleanup(blob));
+    cancelBtn.addEventListener('click', () => cleanup(null));
+
+    confirmBtn.addEventListener('click', async () => {
+      if (!rect || rect.w <= 4 || rect.h <= 4) {
+        cleanup(blob);
+        return;
+      }
+      // Scale display-pixel rect to natural-pixel rect for the crop.
+      const scaleX = img.naturalWidth / img.clientWidth;
+      const scaleY = img.naturalHeight / img.clientHeight;
+      const sx = Math.round(rect.x * scaleX);
+      const sy = Math.round(rect.y * scaleY);
+      const sw = Math.round(rect.w * scaleX);
+      const sh = Math.round(rect.h * scaleY);
+
+      const bitmap = await createImageBitmap(blob);
+      const canvas = document.createElement('canvas');
+      canvas.width = sw;
+      canvas.height = sh;
+      canvas.getContext('2d').drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
+      bitmap.close();
+      const cropped = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+      cleanup(cropped || blob);
+    });
+  });
+}
+
+// Capture a screen/window/tab, then prompt the user to select a region of
+// it. Returns a normalizeImage() result for the chosen region (or full image
+// if "Use full image" picked). Returns null if the user cancels at any step.
+export async function captureScreen() {
+  const raw = await grabFrameBlob();
+  if (!raw) return null;
+  const cropped = await selectRegion(raw);
+  if (!cropped) return null;
+  return await normalizeImage(cropped);
 }
 
 // Returns the first image File from a clipboard or drag DataTransfer.
