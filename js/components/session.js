@@ -25,6 +25,13 @@ export function mountSession(container, { worker, sessionId }) {
       </button>
       <h2 id="session-breakdown-heading" style="display:none">${t('session.breakdown', s.lang)}</h2>
       <div id="session-breakdown" class="markdown-out" style="display:none"></div>
+      <h2 style="margin-top:2rem">Follow-up questions</h2>
+      <div id="session-chat" class="chat"></div>
+      <form id="session-chat-form" class="chat-form">
+        <input id="session-chat-input" type="text"
+               placeholder="${t('session.askPlaceholder', s.lang)}" autocomplete="off">
+        <button type="submit" class="primary">${t('session.send', s.lang)}</button>
+      </form>
       <div class="session-actions">
         <button id="session-cancel" style="display:none" type="button">${t('session.cancel', s.lang)}</button>
       </div>
@@ -37,6 +44,9 @@ export function mountSession(container, { worker, sessionId }) {
   const breakdownBtn = container.querySelector('#session-breakdown-btn');
   const breakdownHeading = container.querySelector('#session-breakdown-heading');
   const breakdownEl = container.querySelector('#session-breakdown');
+  const chatList = container.querySelector('#session-chat');
+  const chatForm = container.querySelector('#session-chat-form');
+  const chatInput = container.querySelector('#session-chat-input');
 
   if (sess.summary) setMarkdown(summaryEl, sess.summary);
 
@@ -47,11 +57,30 @@ export function mountSession(container, { worker, sessionId }) {
     setMarkdown(breakdownEl, sess.breakdown);
   }
 
+  function renderChat() {
+    const current = getSession(sessionId);
+    if (!current || !current.chat || current.chat.length === 0) {
+      chatList.innerHTML = '';
+      return;
+    }
+    chatList.innerHTML = current.chat.map((m) => `
+      <div class="chat-msg chat-${m.role}">
+        <div class="chat-role">${m.role === 'user' ? '🧑 You' : '🤖 Tutor'}</div>
+        <div class="chat-text"></div>
+      </div>
+    `).join('');
+    const nodes = chatList.querySelectorAll('.chat-text');
+    current.chat.forEach((m, i) => setMarkdown(nodes[i], m.text));
+  }
+  renderChat();
+
   let streamedText = sess.summary || '';
   let breakdownText = sess.breakdown || '';
   let currentRequestId = null;
   let nextRequestId = Math.floor(Math.random() * 1000) + 1;
   let activeOp = null;
+  let chatStreamingEl = null;
+  let chatStreamingText = '';
 
   function onWorkerMessage(e) {
     const m = e.data;
@@ -77,6 +106,9 @@ export function mountSession(container, { worker, sessionId }) {
       } else if (activeOp === 'breakdown') {
         breakdownText += m.text;
         setMarkdown(breakdownEl, breakdownText);
+      } else if (activeOp === 'chat') {
+        chatStreamingText += m.text;
+        if (chatStreamingEl) setMarkdown(chatStreamingEl, chatStreamingText);
       }
     }
     else if (m.type === 'done' || m.type === 'cancelled') {
@@ -85,6 +117,14 @@ export function mountSession(container, { worker, sessionId }) {
       currentRequestId = null;
       if (activeOp === 'summarize') updateSession(sessionId, { summary: streamedText });
       else if (activeOp === 'breakdown') updateSession(sessionId, { breakdown: breakdownText });
+      else if (activeOp === 'chat') {
+        const current = getSession(sessionId);
+        const newChat = (current.chat || []).slice();
+        newChat.push({ role: 'assistant', text: chatStreamingText, ts: Date.now() });
+        updateSession(sessionId, { chat: newChat });
+        chatStreamingEl = null;
+        chatStreamingText = '';
+      }
       activeOp = null;
     }
     else if (m.type === 'error') {
@@ -142,6 +182,50 @@ export function mountSession(container, { worker, sessionId }) {
       [bitmap],
     );
   }
+
+  async function startChat(userText) {
+    const current = getSession(sessionId);
+    if (!current) return;
+
+    const newChat = (current.chat || []).slice();
+    newChat.push({ role: 'user', text: userText, ts: Date.now() });
+    updateSession(sessionId, { chat: newChat });
+    renderChat();
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-msg chat-assistant';
+    bubble.innerHTML = '<div class="chat-role">🤖 Tutor</div><div class="chat-text"></div>';
+    chatList.appendChild(bubble);
+    chatStreamingEl = bubble.querySelector('.chat-text');
+    chatStreamingText = '';
+
+    const blob = await (await fetch(current.image)).blob();
+    const bitmap = await createImageBitmap(blob);
+    const requestId = nextRequestId++;
+    currentRequestId = requestId;
+    activeOp = 'chat';
+    worker.postMessage(
+      {
+        type: 'chat',
+        requestId,
+        image: bitmap,
+        summary: current.summary || '',
+        history: newChat.slice(0, -1),
+        userMessage: userText,
+        lang: s.lang,
+        model: s.model,
+      },
+      [bitmap],
+    );
+  }
+
+  chatForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text) return;
+    chatInput.value = '';
+    startChat(text);
+  });
 
   breakdownBtn.addEventListener('click', startBreakdown);
 

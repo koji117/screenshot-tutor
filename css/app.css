@@ -238,3 +238,26 @@ button.primary {
   font-size: 14px;
 }
 button.primary:hover { opacity: 0.9; }
+
+.chat { margin: 1rem 0; }
+.chat-msg {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+}
+.chat-msg.chat-user { background: var(--accent-bg); }
+.chat-msg.chat-assistant { background: #fafafa; border: 1px solid var(--border); }
+.chat-role { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.chat-text { font-size: 14px; }
+.chat-text p { margin: 0 0 0.5em; }
+.chat-text p:last-child { margin-bottom: 0; }
+
+.chat-form { display: flex; gap: 0.5rem; margin-top: 1rem; }
+.chat-form input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+.chat-form button { padding: 8px 18px; }

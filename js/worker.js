@@ -18,7 +18,7 @@ import {
   InterruptableStoppingCriteria,
   env,
 } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
-import { summarizePrompt, breakdownPrompt } from './prompts.js';
+import { summarizePrompt, breakdownPrompt, chatSystemPrompt } from './prompts.js';
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
@@ -239,6 +239,90 @@ self.onmessage = async (e) => {
         await model.generate({
           ...inputs,
           max_new_tokens: 768,
+          do_sample: false,
+          streamer,
+          stopping_criteria: stoppingCriteria,
+          ...(eosTokenId ? { eos_token_id: eosTokenId } : {}),
+        });
+        flush();
+
+        if (cancelRequested) self.postMessage({ type: 'cancelled', requestId });
+        else self.postMessage({ type: 'done', requestId });
+      } finally {
+        stoppingCriteria = null;
+        inFlight = false;
+      }
+      return;
+    }
+
+    if (msg.type === 'chat') {
+      if (inFlight) {
+        self.postMessage({ type: 'error', error: 'busy', requestId: msg.requestId });
+        return;
+      }
+      inFlight = true;
+      const { requestId, image, summary, history, userMessage, lang, model: which } = msg;
+      try {
+        cancelRequested = false;
+        stoppingCriteria = new InterruptableStoppingCriteria();
+        await loadModel(which || 'e2b');
+        self.postMessage({ type: 'started', requestId });
+
+        const sys = chatSystemPrompt(lang, summary || '');
+
+        // Compose chat as role-tagged turns. The image attaches to the
+        // first user turn only.
+        const turns = [];
+        const allHistory = (history || []).slice();
+        allHistory.push({ role: 'user', text: userMessage });
+        let firstUserSent = false;
+        for (const turn of allHistory) {
+          if (turn.role === 'user' && !firstUserSent) {
+            turns.push({ role: 'user', content: [
+              { type: 'image', image },
+              { type: 'text', text: sys + '\n\n' + turn.text.trim() },
+            ]});
+            firstUserSent = true;
+          } else if (turn.role === 'user') {
+            turns.push({ role: 'user', content: [{ type: 'text', text: turn.text.trim() }] });
+          } else {
+            turns.push({ role: 'assistant', content: [{ type: 'text', text: turn.text.trim() }] });
+          }
+        }
+
+        let inputs;
+        try {
+          inputs = await processor.apply_chat_template(turns, {
+            add_generation_prompt: true,
+            tokenize: true,
+            return_dict: true,
+            return_tensors: 'pt',
+          });
+        } catch (err) {
+          self.postMessage({ type: 'warn', message: 'apply_chat_template (chat) failed: ' + err.message });
+          // Fallback: manual assembly with <image_soft_token>.
+          const parts = ['<bos>'];
+          for (const turn of turns) {
+            const role = turn.role === 'assistant' ? 'model' : 'user';
+            const text = turn.content.map((c) => c.type === 'text' ? c.text : '<image_soft_token>').join('\n');
+            parts.push('<start_of_turn>' + role + '\n' + text + '<end_of_turn>\n');
+          }
+          parts.push('<start_of_turn>model\n');
+          const prompt = parts.join('');
+          inputs = await processor(prompt, image, null, { add_special_tokens: false });
+        }
+
+        let eosTokenId;
+        try {
+          const ids = processor.tokenizer.encode('<end_of_turn>', { add_special_tokens: false });
+          if (Array.isArray(ids) && ids.length > 0) eosTokenId = ids[0];
+        } catch {}
+
+        const { streamer, flush } = makeStreamer(requestId, eosTokenId);
+
+        await model.generate({
+          ...inputs,
+          max_new_tokens: 512,
           do_sample: false,
           streamer,
           stopping_criteria: stoppingCriteria,
