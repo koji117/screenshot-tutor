@@ -18,7 +18,7 @@ import {
   InterruptableStoppingCriteria,
   env,
 } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
-import { summarizePrompt } from './prompts.js';
+import { summarizePrompt, breakdownPrompt } from './prompts.js';
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
@@ -205,6 +205,49 @@ self.onmessage = async (e) => {
         } else {
           self.postMessage({ type: 'done', requestId });
         }
+      } finally {
+        stoppingCriteria = null;
+        inFlight = false;
+      }
+      return;
+    }
+
+    if (msg.type === 'breakdown') {
+      if (inFlight) {
+        self.postMessage({ type: 'error', error: 'busy', requestId: msg.requestId });
+        return;
+      }
+      inFlight = true;
+      const { requestId, image, summary, lang, model: which } = msg;
+      try {
+        cancelRequested = false;
+        stoppingCriteria = new InterruptableStoppingCriteria();
+        await loadModel(which || 'e2b');
+        self.postMessage({ type: 'started', requestId });
+
+        const promptText = breakdownPrompt(lang, summary || '');
+        const inputs = await buildInputs(image, promptText);
+
+        let eosTokenId;
+        try {
+          const ids = processor.tokenizer.encode('<end_of_turn>', { add_special_tokens: false });
+          if (Array.isArray(ids) && ids.length > 0) eosTokenId = ids[0];
+        } catch {}
+
+        const { streamer, flush } = makeStreamer(requestId, eosTokenId);
+
+        await model.generate({
+          ...inputs,
+          max_new_tokens: 768,
+          do_sample: false,
+          streamer,
+          stopping_criteria: stoppingCriteria,
+          ...(eosTokenId ? { eos_token_id: eosTokenId } : {}),
+        });
+        flush();
+
+        if (cancelRequested) self.postMessage({ type: 'cancelled', requestId });
+        else self.postMessage({ type: 'done', requestId });
       } finally {
         stoppingCriteria = null;
         inFlight = false;
