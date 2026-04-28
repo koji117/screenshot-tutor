@@ -127,12 +127,6 @@ function buildSessionFilename(session) {
   return `${ymd}-${hm}-${slug}.md`;
 }
 
-function buildSessionImageFilename(session) {
-  const { ymd, hm } = timestampParts(session.createdAt);
-  const slug = slugify(session.summary) || 'screenshot';
-  return `${ymd}-${hm}-${slug}.jpg`;
-}
-
 function buildSynthesisFilename(ts) {
   const { ymd, hm } = timestampParts(ts);
   return `${ymd}-${hm}-synthesis.md`;
@@ -152,7 +146,7 @@ function frontmatter(props) {
   return lines.join('\n');
 }
 
-function buildSessionMarkdown(session, imageFilename) {
+function buildSessionMarkdown(session) {
   const { iso } = timestampParts(session.createdAt);
   const fm = frontmatter({
     created: iso,
@@ -163,10 +157,6 @@ function buildSessionMarkdown(session, imageFilename) {
   const lines = [];
   lines.push(`# Screenshot summary`);
   lines.push('');
-  if (imageFilename) {
-    lines.push(`![[${imageFilename}]]`);
-    lines.push('');
-  }
   lines.push('## Summary');
   lines.push('');
   lines.push(session.summary || '_(no summary)_');
@@ -216,24 +206,16 @@ async function writeFile(dirHandle, filename, content) {
   await writable.close();
 }
 
-// Save the session as <ymd>-<hm>-<slug>.md alongside the screenshot
-// as <ymd>-<hm>-<slug>.jpg. Returns the filenames written.
+// Save the session as <ymd>-<hm>-<slug>.md. Returns the filename written.
+// The screenshot itself is not exported — only the summary, breakdown,
+// and chat content go into the markdown.
 export async function exportSession(session) {
   if (!session) throw new Error('no session to export');
   const dir = await ensureExportDir();
-
-  const imageFilename = buildSessionImageFilename(session);
   const mdFilename = buildSessionFilename(session);
-
-  // Write the image first so the markdown's wikilink is valid the moment
-  // someone opens it. session.image is a JPEG data URL.
-  const blob = await (await fetch(session.image)).blob();
-  await writeFile(dir, imageFilename, blob);
-
-  const md = buildSessionMarkdown(session, imageFilename);
+  const md = buildSessionMarkdown(session);
   await writeFile(dir, mdFilename, md);
-
-  return { mdFilename, imageFilename };
+  return { mdFilename };
 }
 
 export async function exportSynthesis(text, sessionCount) {
