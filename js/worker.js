@@ -76,38 +76,65 @@ async function loadModel(which) {
 }
 
 // Build inputs for a single-turn user message containing image + text.
-// Tries apply_chat_template first, falls back to manual prompt assembly.
+//
+// Two-step pattern (Transformers.js multimodal contract):
+//   1. apply_chat_template(messages, {add_generation_prompt:true}) returns
+//      a prompt STRING with image placeholders inserted by the Gemma 4
+//      chat template (e.g., <start_of_image>...<end_of_image>).
+//   2. processor(promptStr, [images]) tokenizes the text AND processes
+//      the images, returning {input_ids, attention_mask, pixel_values}.
+//
+// Setting tokenize:true on apply_chat_template skips step 2 and silently
+// drops the image — that's how an earlier version produced replies like
+// "please provide a screenshot." We do the two steps explicitly here.
 async function buildInputs(image, text) {
   const messages = [
     {
       role: 'user',
       content: [
-        { type: 'image', image },
+        { type: 'image' },
         { type: 'text', text },
       ],
     },
   ];
 
+  let promptStr;
   try {
-    return await processor.apply_chat_template(messages, {
+    promptStr = processor.apply_chat_template(messages, {
       add_generation_prompt: true,
-      tokenize: true,
-      return_dict: true,
-      return_tensors: 'pt',
     });
   } catch (err) {
-    // Fallback: manual prompt assembly. Gemma 4 uses <image_soft_token>
-    // as the placeholder for image embeddings. The processor still needs
-    // to be called with both image and text to compute image features.
     self.postMessage({
       type: 'warn',
-      message: 'apply_chat_template failed, using manual fallback: ' + (err && err.message),
+      message: 'apply_chat_template failed, using manual prompt: ' + (err && err.message),
     });
-    const prompt =
-      '<bos><start_of_turn>user\n<image_soft_token>\n' + text.trim() +
+    promptStr =
+      '<bos><start_of_turn>user\n<start_of_image>\n' + text.trim() +
       '<end_of_turn>\n<start_of_turn>model\n';
-    return await processor(prompt, image, null, { add_special_tokens: false });
   }
+
+  // Diagnostic: surface what the template produced and what the
+  // processor returned. Logged via console.log so it shows up in
+  // DevTools under the worker's context.
+  console.log('[buildInputs] image:', image && image.constructor && image.constructor.name,
+    image && `${image.width}x${image.height} channels=${image.channels}`);
+  console.log('[buildInputs] prompt (first 300 chars):', promptStr.slice(0, 300));
+
+  const inputs = await processor(promptStr, [image]);
+
+  console.log('[buildInputs] inputs keys:', Object.keys(inputs));
+  if (inputs.pixel_values) {
+    const pv = inputs.pixel_values;
+    console.log('[buildInputs] pixel_values dims:', pv.dims || pv.shape, 'type:', pv.constructor && pv.constructor.name);
+  } else {
+    console.warn('[buildInputs] NO pixel_values in inputs — image was not processed!');
+  }
+  if (inputs.input_ids) {
+    const ids = inputs.input_ids;
+    console.log('[buildInputs] input_ids dims:', ids.dims || ids.shape);
+  }
+
+  return inputs;
 }
 
 // Stream generation with end-of-turn buffering. The streamer may deliver a
@@ -285,7 +312,8 @@ self.onmessage = async (e) => {
         const sys = chatSystemPrompt(lang, summary || '');
 
         // Compose chat as role-tagged turns. The image attaches to the
-        // first user turn only.
+        // first user turn only via the {type:'image'} placeholder; actual
+        // pixel data is supplied to processor() in the second step below.
         const turns = [];
         const allHistory = (history || []).slice();
         allHistory.push({ role: 'user', text: userMessage });
@@ -293,7 +321,7 @@ self.onmessage = async (e) => {
         for (const turn of allHistory) {
           if (turn.role === 'user' && !firstUserSent) {
             turns.push({ role: 'user', content: [
-              { type: 'image', image },
+              { type: 'image' },
               { type: 'text', text: sys + '\n\n' + turn.text.trim() },
             ]});
             firstUserSent = true;
@@ -304,27 +332,24 @@ self.onmessage = async (e) => {
           }
         }
 
-        let inputs;
+        let promptStr;
         try {
-          inputs = await processor.apply_chat_template(turns, {
+          promptStr = processor.apply_chat_template(turns, {
             add_generation_prompt: true,
-            tokenize: true,
-            return_dict: true,
-            return_tensors: 'pt',
           });
         } catch (err) {
           self.postMessage({ type: 'warn', message: 'apply_chat_template (chat) failed: ' + err.message });
-          // Fallback: manual assembly with <image_soft_token>.
           const parts = ['<bos>'];
           for (const turn of turns) {
             const role = turn.role === 'assistant' ? 'model' : 'user';
-            const text = turn.content.map((c) => c.type === 'text' ? c.text : '<image_soft_token>').join('\n');
+            const text = turn.content.map((c) => c.type === 'text' ? c.text : '<start_of_image>').join('\n');
             parts.push('<start_of_turn>' + role + '\n' + text + '<end_of_turn>\n');
           }
           parts.push('<start_of_turn>model\n');
-          const prompt = parts.join('');
-          inputs = await processor(prompt, image, null, { add_special_tokens: false });
+          promptStr = parts.join('');
         }
+
+        const inputs = await processor(promptStr, [image]);
 
         let eosTokenId;
         try {
