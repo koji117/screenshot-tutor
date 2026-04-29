@@ -1,0 +1,140 @@
+// VLMRunner.swift
+// Owns the MLX VLM container. Single instance held by the App so the
+// model survives view changes and a re-tapped "Summarize" doesn't
+// reload weights. UI observes `state` and `output` via @Published.
+//
+// The actual generation pipeline (image + prompt → token stream) is
+// VLMModelFactory + ModelContainer.perform from mlx-swift-examples.
+// We sit on top of it and surface streaming text.
+
+import Foundation
+import SwiftUI
+import UIKit
+import MLX
+import MLXLMCommon
+import MLXVLM
+
+@MainActor
+final class VLMRunner: ObservableObject {
+    enum State: Equatable {
+        case idle
+        case loading(progress: Double)   // 0.0 – 1.0
+        case ready
+        case generating
+        case failed(String)
+    }
+
+    @Published private(set) var state: State = .idle
+    @Published private(set) var output: String = ""
+    @Published var selectedModelID: String = ModelCatalog.defaultModelID
+
+    private var container: ModelContainer?
+    private var loadedModelID: String?
+    private var generationTask: Task<Void, Never>?
+
+    /// Download (if needed) and load the currently-selected model.
+    /// Cheap if the model is already loaded.
+    func loadModel() async {
+        if loadedModelID == selectedModelID, container != nil {
+            state = .ready
+            return
+        }
+        guard let entry = ModelCatalog.entries.first(where: { $0.huggingFaceID == selectedModelID })
+        else {
+            state = .failed("unknown model id: \(selectedModelID)")
+            return
+        }
+
+        state = .loading(progress: 0)
+        do {
+            // Cap GPU memory usage. 0 = no cache; we'd rather hit weights
+            // freshly than blow the iPad's unified memory budget.
+            MLX.GPU.set(cacheLimit: 256 * 1024 * 1024)
+
+            let container = try await VLMModelFactory.shared.loadContainer(
+                configuration: entry.configuration
+            ) { [weak self] progress in
+                Task { @MainActor in
+                    self?.state = .loading(progress: progress.fractionCompleted)
+                }
+            }
+            self.container = container
+            self.loadedModelID = selectedModelID
+            self.state = .ready
+        } catch {
+            self.state = .failed("model load failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Run a prompt against the loaded model with a single image.
+    /// Streams generated text into `output`. Cancellable via
+    /// `cancelGeneration()`.
+    func summarize(image: UIImage, prompt: String) {
+        generationTask?.cancel()
+        output = ""
+        state = .generating
+
+        guard let container else {
+            state = .failed("model not loaded")
+            return
+        }
+
+        // Convert UIImage → CIImage for the user-input pipeline. MLX-VLM's
+        // UserInput accepts CIImage directly.
+        guard let cgImage = image.cgImage else {
+            state = .failed("could not read image")
+            return
+        }
+        let ciImage = CIImage(cgImage: cgImage)
+
+        generationTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await container.perform { context in
+                    let userInput = UserInput(
+                        chat: [
+                            .user(prompt, images: [.ciImage(ciImage)])
+                        ]
+                    )
+                    let lmInput = try await context.processor.prepare(input: userInput)
+
+                    let parameters = GenerateParameters(
+                        maxTokens: 512,
+                        temperature: 0.0
+                    )
+
+                    let stream = try MLXLMCommon.generate(
+                        input: lmInput,
+                        parameters: parameters,
+                        context: context
+                    )
+
+                    for await item in stream {
+                        if Task.isCancelled { break }
+                        switch item {
+                        case .chunk(let text):
+                            await MainActor.run { self.output += text }
+                        case .info:
+                            continue
+                        @unknown default:
+                            continue
+                        }
+                    }
+                }
+                if !Task.isCancelled {
+                    await MainActor.run { self.state = .ready }
+                }
+            } catch {
+                await MainActor.run {
+                    self.state = .failed("generation failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func cancelGeneration() {
+        generationTask?.cancel()
+        generationTask = nil
+        if case .generating = state { state = .ready }
+    }
+}

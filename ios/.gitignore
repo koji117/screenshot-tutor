@@ -1,0 +1,18 @@
+# XcodeGen output — regenerated from project.yml
+ScreenshotTutor.xcodeproj/
+
+# Xcode user/build state
+xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+build/
+*.xcscmblueprint
+*.xcuserstate
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+
+# macOS
+.DS_Store
