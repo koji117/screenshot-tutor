@@ -6,7 +6,10 @@ export const KEYS = {
   sessions: 'screenshot-tutor-v1:sessions',
 };
 
-const DEFAULT_SETTINGS = { model: 'e4b', lang: 'en', historyOpen: false };
+// Default to e2b (~1.5GB). e4b (~3GB) crashes iOS Safari tabs from OOM,
+// and even on desktop is a heavier first-time download. Users with the
+// memory headroom can opt up via the Model toggle in the topbar.
+const DEFAULT_SETTINGS = { model: 'e2b', lang: 'en', historyOpen: false };
 
 export const SESSION_LIMIT = 20;
 const QUOTA_BUDGET_BYTES = 4_500_000;
@@ -27,6 +30,18 @@ function parseJson(raw, fallback) {
   } catch { return fallback; }
 }
 
+// True on iPhone/iPad Safari (incl. iPadOS Safari that reports as Mac).
+// We use this to clamp the model choice — e4b (~3GB) reliably OOM-crashes
+// the tab on iOS Safari, which the user sees as a white page mid-load.
+export function isIOS() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  // iPadOS Safari sets UA to Macintosh; distinguish by touch support.
+  return /Macintosh/.test(ua) && typeof navigator.maxTouchPoints === 'number'
+    && navigator.maxTouchPoints > 1;
+}
+
 function validateSettings(s) {
   const out = { ...DEFAULT_SETTINGS };
   if (s && typeof s === 'object') {
@@ -34,6 +49,10 @@ function validateSettings(s) {
     if (s.lang === 'en' || s.lang === 'ja') out.lang = s.lang;
     if (typeof s.historyOpen === 'boolean') out.historyOpen = s.historyOpen;
   }
+  // Clamp e4b → e2b on iOS regardless of saved preference. The 3GB model
+  // exceeds iOS Safari's per-tab memory budget and the tab gets killed
+  // partway through model load (manifests as a white page).
+  if (out.model === 'e4b' && isIOS()) out.model = 'e2b';
   return out;
 }
 

@@ -1,11 +1,12 @@
 // js/components/topbar.js
 // Top bar: app title + model picker + lang toggle + history toggle.
 
-import { getSettings, setSettings } from '../store.js';
+import { getSettings, setSettings, isIOS } from '../store.js';
 import { t } from '../i18n.js';
 
 export function mountTopbar(container, { onNewSession, onToggleHistory }) {
   const s = getSettings();
+  const ios = isIOS();
   container.innerHTML = `
     <header class="topbar">
       <div class="topbar-title">${t('app.title', s.lang)}</div>
@@ -13,9 +14,9 @@ export function mountTopbar(container, { onNewSession, onToggleHistory }) {
         <button id="tb-new" type="button">${t('topbar.new', s.lang)}</button>
         <label>
           <span class="topbar-label">${t('topbar.model', s.lang)}</span>
-          <select id="tb-model">
+          <select id="tb-model"${ios ? ' title="e4b is disabled on iPad/iPhone — it exceeds Safari’s tab memory budget"' : ''}>
             <option value="e2b" ${s.model === 'e2b' ? 'selected' : ''}>e2b</option>
-            <option value="e4b" ${s.model === 'e4b' ? 'selected' : ''}>e4b</option>
+            <option value="e4b" ${s.model === 'e4b' ? 'selected' : ''}${ios ? ' disabled' : ''}>e4b${ios ? ' (desktop only)' : ''}</option>
           </select>
         </label>
         <label>

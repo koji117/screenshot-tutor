@@ -54,7 +54,12 @@ Open the deployed URL in **Safari** (not Chrome — iOS PWA install only
 works from Safari). Tap the Share button → **Add to Home Screen** →
 **Add**. Launch from the Home Screen icon to keep the cached model
 through iOS's 7-day storage eviction window. WebGPU is required;
-on iPad that means iPadOS 16.4 or later.
+on iPad that means iPadOS 18 or later.
+
+iPad/iPhone are restricted to the `e2b` model — the larger `e4b`
+(~3GB) exceeds iOS Safari's per-tab memory budget and crashes the
+tab partway through model load (you see a white page). The model
+picker disables `e4b` on iOS for this reason.
 
 ## Testing
 

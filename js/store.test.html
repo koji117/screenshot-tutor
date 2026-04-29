@@ -41,8 +41,10 @@
     function resetSessions() { localStorage.removeItem(KEYS.sessions); }
 
     // --- Settings ---
+    // Note: default model is e2b (smaller, fits iOS Safari). On iOS the
+    // store also clamps e4b → e2b; these tests assume a non-iOS browser.
     reset();
-    assert('settings defaults', getSettings(), { model: 'e4b', lang: 'en', historyOpen: false });
+    assert('settings defaults', getSettings(), { model: 'e2b', lang: 'en', historyOpen: false });
 
     reset();
     setSettings({ model: 'e2b', lang: 'ja', historyOpen: true });
@@ -55,7 +57,7 @@
 
     reset();
     setSettings({ model: 'bogus' });
-    assert('invalid model rejected', getSettings().model, 'e4b');
+    assert('invalid model rejected', getSettings().model, 'e2b');
 
     reset();
     setSettings({ lang: 'fr' });
@@ -63,7 +65,7 @@
 
     reset();
     localStorage.setItem(KEYS.settings, '{not json');
-    assert('corrupted JSON falls back', getSettings(), { model: 'e4b', lang: 'en', historyOpen: false });
+    assert('corrupted JSON falls back', getSettings(), { model: 'e2b', lang: 'en', historyOpen: false });
 
     // --- Sessions ---
     resetSessions();
