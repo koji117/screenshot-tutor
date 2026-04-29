@@ -102,6 +102,7 @@ function timestampParts(ts) {
     iso: d.toISOString(),
     ymd: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
     hm: `${pad(d.getHours())}${pad(d.getMinutes())}`,
+    hms: `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`,
   };
 }
 
@@ -130,6 +131,16 @@ function buildSessionFilename(session) {
 function buildSynthesisFilename(ts) {
   const { ymd, hm } = timestampParts(ts);
   return `${ymd}-${hm}-synthesis.md`;
+}
+
+// Source screenshots embedded into a synthesis use seconds in the filename
+// to avoid collisions when multiple sessions share the same minute, and a
+// short id suffix as a final tiebreaker.
+function buildSourceImageFilename(src) {
+  const { ymd, hms } = timestampParts(src.createdAt);
+  const slug = slugify(src.summary) || 'screenshot';
+  const idTag = (src.id || '').replace(/[^a-z0-9]/gi, '').slice(0, 6) || 'img';
+  return `${ymd}-${hms}-${slug}-${idTag}.jpg`;
 }
 
 function frontmatter(props) {
@@ -184,7 +195,7 @@ function buildSessionMarkdown(session) {
   return fm + lines.join('\n') + '\n';
 }
 
-function buildSynthesisMarkdown(text, sessionCount) {
+function buildSynthesisMarkdown(text, sessionCount, imageRefs) {
   const ts = Date.now();
   const { iso } = timestampParts(ts);
   const fm = frontmatter({
@@ -194,7 +205,30 @@ function buildSynthesisMarkdown(text, sessionCount) {
     sessions: sessionCount,
     tags: ['study', 'synthesis'],
   });
-  return fm + `# Study synthesis\n\n_Across ${sessionCount} sessions_\n\n${text}\n`;
+
+  const lines = [];
+  lines.push('# Study synthesis');
+  lines.push('');
+  lines.push(`_Across ${sessionCount} sessions_`);
+  lines.push('');
+  lines.push(text);
+
+  if (imageRefs && imageRefs.length > 0) {
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+    lines.push('## Source screenshots');
+    lines.push('');
+    for (const ref of imageRefs) {
+      const date = new Date(ref.createdAt).toLocaleString();
+      lines.push(`**${date}**`);
+      lines.push('');
+      lines.push(`![[${ref.filename}]]`);
+      lines.push('');
+    }
+  }
+
+  return fm + lines.join('\n') + '\n';
 }
 
 // --- Public exports ---
@@ -218,12 +252,37 @@ export async function exportSession(session) {
   return { mdFilename };
 }
 
-export async function exportSynthesis(text, sessionCount) {
+// Export the synthesis as <ymd>-<hm>-synthesis.md and write each source
+// session's screenshot as a sibling JPG that the markdown references via
+// [[wikilink]]. Opening the synthesis in Obsidian then renders the source
+// screenshots inline. Sources is the array of snapshots from synthesis.js
+// (id, image data URL, summary, createdAt).
+export async function exportSynthesis(text, sources) {
   if (!text || !text.trim()) throw new Error('no synthesis to export');
+  if (!Array.isArray(sources)) sources = [];
   const dir = await ensureExportDir();
+
+  // Write each source image. Skip silently on per-image failure so the
+  // synthesis markdown still saves even if one image is unreadable.
+  const imageRefs = [];
+  for (const src of sources) {
+    if (!src || !src.image) continue;
+    const imgFilename = buildSourceImageFilename(src);
+    try {
+      const blob = await (await fetch(src.image)).blob();
+      await writeFile(dir, imgFilename, blob);
+      imageRefs.push({
+        filename: imgFilename,
+        createdAt: src.createdAt,
+      });
+    } catch {
+      // continue
+    }
+  }
+
   const ts = Date.now();
   const filename = buildSynthesisFilename(ts);
-  const md = buildSynthesisMarkdown(text, sessionCount);
+  const md = buildSynthesisMarkdown(text, sources.length, imageRefs);
   await writeFile(dir, filename, md);
-  return { filename };
+  return { filename, imageCount: imageRefs.length };
 }

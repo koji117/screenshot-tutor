@@ -18,6 +18,18 @@ export function mountSynthesis(container, { worker, onAfterClear }) {
   const usedIds = usable.map((sess) => sess.id);
   const sessionCount = summaries.length;
 
+  // Snapshot of source sessions for the export step. The auto-archive
+  // deletes these from the store on synthesis completion, but the export
+  // markdown wants to embed the source screenshots — so we keep a copy
+  // of the image data URLs in memory until the user has had a chance to
+  // export.
+  const sourceSnapshots = usable.map((sess) => ({
+    id: sess.id,
+    image: sess.image,
+    summary: sess.summary,
+    createdAt: sess.createdAt,
+  }));
+
   container.innerHTML = `
     <div class="synthesis">
       <h2 class="synthesis-heading">${t('synthesis.heading', s.lang)}</h2>
@@ -136,7 +148,7 @@ export function mountSynthesis(container, { worker, onAfterClear }) {
     }
     exportBtn.disabled = true;
     try {
-      const { filename } = await exportSynthesis(streamedText, sessionCount);
+      const { filename } = await exportSynthesis(streamedText, sourceSnapshots);
       window.__showToast && window.__showToast(
         tFmt('session.exportSuccess', s.lang, { filename })
       );
