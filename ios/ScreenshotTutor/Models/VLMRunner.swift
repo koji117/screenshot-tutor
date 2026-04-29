@@ -162,4 +162,39 @@ final class VLMRunner: ObservableObject {
         generationTask = nil
         if case .generating = state { state = .ready }
     }
+
+    /// Delete the on-disk weights for a model. If the model is the
+    /// currently-loaded one, also drops it from memory so the next
+    /// `loadModel()` will re-download.
+    func deleteModel(id: String) async {
+        cancelGeneration()
+        guard let entry = ModelCatalog.entry(id: id) else { return }
+
+        if loadedModelID == id {
+            container = nil
+            loadedModelID = nil
+            // Reset state so the empty-state UI shows the load button
+            // again rather than "Model ready" pointing at vanished weights.
+            state = .idle
+        }
+
+        do {
+            try HFCacheManager.deleteModel(repoID: entry.configuration.name)
+        } catch {
+            state = .failed("delete failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Disk size of the selected model's cached weights, in bytes.
+    /// Returns 0 when nothing is cached for that id.
+    func diskSize(forID id: String) -> Int64 {
+        guard let entry = ModelCatalog.entry(id: id) else { return 0 }
+        return HFCacheManager.sizeOnDisk(repoID: entry.configuration.name)
+    }
+
+    /// True when the selected model has any weights on disk.
+    func isDownloaded(id: String) -> Bool {
+        guard let entry = ModelCatalog.entry(id: id) else { return false }
+        return HFCacheManager.isDownloaded(repoID: entry.configuration.name)
+    }
 }

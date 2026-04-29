@@ -1,7 +1,8 @@
 // EmptyStateView.swift
 // Initial screen — pick a screenshot, choose a model, optionally
 // pre-load the model so the first generate isn't blocked on a
-// multi-minute weight download.
+// multi-minute weight download. Also exposes a "Delete download"
+// affordance so users can free disk space without leaving the app.
 
 import SwiftUI
 import UIKit
@@ -9,6 +10,12 @@ import UIKit
 struct EmptyStateView: View {
     @EnvironmentObject var runner: VLMRunner
     @Binding var pickedImage: UIImage?
+
+    // Re-read on every pickerSelection change so the disk-size /
+    // downloaded-state below stay accurate without an explicit observer.
+    @State private var diskSizeBytes: Int64 = 0
+    @State private var isDownloaded: Bool = false
+    @State private var showDeleteConfirm: Bool = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -28,6 +35,16 @@ struct EmptyStateView: View {
                 .frame(maxWidth: 480)
         }
         .padding()
+        .onAppear { refreshDiskState() }
+        .onChange(of: runner.selectedModelID) { _, _ in refreshDiskState() }
+        .onChange(of: runner.state) { _, newState in
+            // After a load completes the cache is freshly populated;
+            // after delete the directory is gone. Either way, re-read.
+            switch newState {
+            case .ready, .idle, .failed: refreshDiskState()
+            default: break
+            }
+        }
     }
 
     private var modelPanel: some View {
@@ -52,11 +69,42 @@ struct EmptyStateView: View {
             HStack {
                 loadButton
                 statusLabel
+                Spacer()
+            }
+
+            if isDownloaded {
+                HStack {
+                    Text("On disk: \(formatBytes(diskSizeBytes))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Label("Delete download", systemImage: "trash")
+                            .font(.footnote)
+                    }
+                }
             }
         }
         .padding()
         .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .confirmationDialog(
+            "Delete this model from disk?",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(formatBytes(diskSizeBytes))", role: .destructive) {
+                Task {
+                    await runner.deleteModel(id: runner.selectedModelID)
+                    refreshDiskState()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The weights will be re-downloaded from Hugging Face the next time you load this model.")
+        }
     }
 
     @ViewBuilder
@@ -92,11 +140,23 @@ struct EmptyStateView: View {
         }
     }
 
+    private func refreshDiskState() {
+        let id = runner.selectedModelID
+        isDownloaded = runner.isDownloaded(id: id)
+        diskSizeBytes = runner.diskSize(forID: id)
+    }
+
     private func formatSize(_ mb: Int) -> String {
         if mb >= 1000 {
             let gb = Double(mb) / 1000
             return String(format: gb.truncatingRemainder(dividingBy: 1) == 0 ? "%.0fGB" : "%.1fGB", gb)
         }
         return "\(mb)MB"
+    }
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
     }
 }

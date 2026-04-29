@@ -106,3 +106,63 @@ struct HFTokenizerLoader: MLXLMCommon.TokenizerLoader {
         return HFTokenizerAdapter(upstream: upstream)
     }
 }
+
+/// On-disk cache management for HuggingFace-downloaded models.
+/// Mirrors the standard `~/.cache/huggingface/hub` layout that
+/// `HubClient` writes into — repository directory is named
+/// `models--<namespace>--<name>` under the cache root, with a sibling
+/// `.metadata/...` entry. Both are removed on delete so the next
+/// download is a fresh fetch.
+enum HFCacheManager {
+    /// Bytes consumed on disk by the given repo, or 0 if not cached.
+    static func sizeOnDisk(repoID id: String) -> Int64 {
+        guard let dir = repoDirectory(for: id) else { return 0 }
+        return directorySize(at: dir)
+    }
+
+    /// Whether anything from the given repo is on disk.
+    static func isDownloaded(repoID id: String) -> Bool {
+        guard let dir = repoDirectory(for: id) else { return false }
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir)
+            && isDir.boolValue
+    }
+
+    /// Remove the repo's directory and its sibling metadata entry.
+    /// Safe to call when nothing is cached (becomes a no-op).
+    static func deleteModel(repoID id: String) throws {
+        let cache = HuggingFace.HubClient().cache
+        guard let cache, let parsedID = HuggingFace.Repo.ID(rawValue: id) else { return }
+        let repoDir = cache.repoDirectory(repo: parsedID, kind: .model)
+        let metaDir = cache.metadataDirectory(repo: parsedID, kind: .model)
+        try? FileManager.default.removeItem(at: repoDir)
+        try? FileManager.default.removeItem(at: metaDir)
+    }
+
+    private static func repoDirectory(for id: String) -> URL? {
+        guard let cache = HuggingFace.HubClient().cache,
+              let parsedID = HuggingFace.Repo.ID(rawValue: id)
+        else { return nil }
+        return cache.repoDirectory(repo: parsedID, kind: .model)
+    }
+
+    /// Recursively sum the size of regular files under `url`.
+    private static func directorySize(at url: URL) -> Int64 {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: url, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]
+        ) else { return 0 }
+
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            let values = try? fileURL.resourceValues(forKeys: Set(keys))
+            if values?.isRegularFile == true {
+                let size = values?.totalFileAllocatedSize
+                    ?? values?.fileAllocatedSize
+                    ?? 0
+                total += Int64(size)
+            }
+        }
+        return total
+    }
+}

@@ -35,6 +35,18 @@ enum ModelCatalog {
             note: "Smaller, faster. Lower quality on dense text."
         ),
         ModelEntry(
+            label: "Gemma 4 E2B (4-bit)",
+            configuration: VLMRegistry.gemma4_E2B_it_4bit,
+            approxSizeMB: 1500,
+            note: "Native MLX port of the web app's e2b model. Strong reading."
+        ),
+        ModelEntry(
+            label: "Gemma 4 E4B (4-bit)",
+            configuration: VLMRegistry.gemma4_E4B_it_4bit,
+            approxSizeMB: 3000,
+            note: "Best reading quality. Heavier — comfortable on iPad Pro/Air."
+        ),
+        ModelEntry(
             label: "Qwen2.5-VL 3B (4-bit)",
             configuration: VLMRegistry.qwen2_5VL3BInstruct4Bit,
             approxSizeMB: 2200,
