@@ -82,14 +82,14 @@ final class VLMRunner: ObservableObject {
 
         state = .loading(progress: 0)
         do {
-            // Squeeze the MLX GPU buffer cache hard — every MB we don't
-            // hand to the cache stays available for model weights and
-            // activations, which is what gets us under the iOS jetsam
-            // ceiling for the larger models (Gemma 4 E4B is ~3GB).
-            // 20MB matches Apple's MLXChatExample. The trade-off is a
-            // small per-call setup cost; we don't notice it on a single
-            // streaming generation.
-            Memory.cacheLimit = 20 * 1024 * 1024
+            // Disable the MLX GPU buffer cache entirely. Every MB it
+            // doesn't hold is a MB we can give to model weights and
+            // activations, which is what keeps us under the iOS jetsam
+            // ceiling on the heavier models. The cache buys reuse
+            // speedup that mostly matters for chained multi-turn ops;
+            // the overhead is negligible for our streaming single-shot
+            // path.
+            Memory.cacheLimit = 0
 
             let container = try await VLMModelFactory.shared.loadContainer(
                 from: HFDownloader(),
@@ -100,11 +100,47 @@ final class VLMRunner: ObservableObject {
                     self?.state = .loading(progress: progress.fractionCompleted)
                 }
             }
+
+            // Explicitly drop any cached buffers MLX accumulated
+            // during weight upload before we sit idle waiting for the
+            // user. Idle memory is what jetsam looks at most often.
+            Memory.clearCache()
+
             self.container = container
             self.loadedModelID = selectedModelID
             self.state = .ready
+
+            registerMemoryWarningObserver()
         } catch {
             self.state = .failed("model load failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Memory pressure response
+
+    private var memoryWarningObserver: NSObjectProtocol?
+
+    /// Subscribe to UIApplication.didReceiveMemoryWarningNotification
+    /// so when iOS pre-warns us about pressure (one step before
+    /// jetsam), we can flush MLX's caches. Most useful for E2B which
+    /// is right at the edge — too late to help E4B which jetsams
+    /// straight from the load step.
+    private func registerMemoryWarningObserver() {
+        if memoryWarningObserver != nil { return }
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                Memory.clearCache()
+            }
+        }
+    }
+
+    deinit {
+        if let observer = memoryWarningObserver {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 
