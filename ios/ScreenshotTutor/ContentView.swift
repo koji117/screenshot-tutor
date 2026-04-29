@@ -13,6 +13,14 @@ enum AppRoute: Hashable {
     case synthesis
 }
 
+/// Wraps a UIImage with a stable id so SwiftUI's
+/// `fullScreenCover(item:)` can drive the region selector. UIImage
+/// itself isn't Identifiable.
+private struct PendingImage: Identifiable {
+    let id = UUID()
+    let image: UIImage
+}
+
 struct ContentView: View {
     @EnvironmentObject var runner: VLMRunner
     @EnvironmentObject var store: SessionStore
@@ -20,6 +28,7 @@ struct ContentView: View {
 
     @State private var route: AppRoute = .empty
     @State private var pickedImage: UIImage?
+    @State private var pendingImage: PendingImage?
     @State private var showHistory: Bool = false
 
     var body: some View {
@@ -35,14 +44,27 @@ struct ContentView: View {
                 onSynthesize: { route = .synthesis }
             )
         }
+        .fullScreenCover(item: $pendingImage) { pending in
+            RegionSelectorView(
+                image: pending.image,
+                onConfirm: { final in
+                    pendingImage = nil
+                    if let session = store.add(image: final) {
+                        route = .session(session.id)
+                    }
+                },
+                onCancel: { pendingImage = nil }
+            )
+        }
         .onChange(of: pickedImage) { _, newImage in
             // The empty state binds to `pickedImage`; when the user
-            // picks one, materialize a session record and navigate.
+            // picks one, route through the region selector before
+            // committing it as a session. iPadOS doesn't expose
+            // partial-screen screenshots, so this is where the
+            // user trims the screenshot down to the relevant area.
             guard let img = newImage else { return }
-            if let session = store.add(image: img) {
-                pickedImage = nil
-                route = .session(session.id)
-            }
+            pickedImage = nil
+            pendingImage = PendingImage(image: img)
         }
     }
 
