@@ -49,12 +49,24 @@ final class VLMRunner: ObservableObject {
             return
         }
 
+        // MLX-Swift's Metal kernels don't run in the iOS Simulator —
+        // simulator Metal returns a null device-name C string that MLX
+        // hands to `std::string`, which crashes inside MetalAllocator
+        // the moment we touch any GPU API. Detect early and bail out
+        // with a clear message rather than crashing on Memory.cacheLimit
+        // or the model load.
+        #if targetEnvironment(simulator)
+        state = .failed("MLX-Swift requires a real iPad — the iOS Simulator can't run Metal kernels.")
+        return
+        #endif
+
         state = .loading(progress: 0)
         do {
-            // Cap the GPU buffer cache. iPad's unified memory is shared with
-            // the rest of the system; bigger caches don't speed up our
-            // single-shot summary path enough to justify the pressure.
-            // (Memory.cacheLimit replaces the deprecated GPU.set(cacheLimit:).)
+            // Cap the GPU buffer cache on real hardware. iPad's unified
+            // memory is shared with the rest of the system; bigger
+            // caches don't speed up our single-shot summary path enough
+            // to justify the pressure. (Memory.cacheLimit replaces the
+            // deprecated MLX.GPU.set(cacheLimit:).)
             Memory.cacheLimit = 256 * 1024 * 1024
 
             let container = try await VLMModelFactory.shared.loadContainer(

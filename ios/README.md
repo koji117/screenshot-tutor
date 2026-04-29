@@ -34,14 +34,22 @@ xcodegen generate
 open ScreenshotTutor.xcodeproj
 ```
 
+> **Real device required.** MLX-Swift's Metal kernels do not run in
+> the iOS Simulator — simulator Metal returns null for device
+> properties MLX needs to construct its allocator, and any GPU touch
+> hard-crashes inside `mlx::core::metal::MetalAllocator`. The app
+> detects the simulator at runtime and shows a clear error rather
+> than crashing, so the simulator is fine for UI smoke-tests but
+> can't actually load or run a model. Run on a physical iPad/iPhone.
+
 In Xcode:
 
 1. Select the `ScreenshotTutor` target → **Signing & Capabilities** →
    pick your team. A free Apple ID works for sideloading to your own
    iPad.
 2. Plug in the iPad, select it as the run destination.
-3. Build & run (⌘R). First launch will resolve Swift Package
-   dependencies from `project.yml` (mlx-swift-examples).
+3. Build & run (⌘R). First launch resolves Swift Package
+   dependencies (mlx-swift-lm, swift-huggingface, swift-transformers).
 4. On the iPad, allow the developer profile in
    **Settings → General → VPN & Device Management** the first time.
 
