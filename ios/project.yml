@@ -18,12 +18,21 @@ settings:
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 
 # mlx-swift-lm now ships the LLM/VLM libraries that used to live in
-# mlx-swift-examples. Track the 3.x release line; mlx-swift-examples
-# itself only ships MNIST + StableDiffusion as products today.
+# mlx-swift-examples. The MLXHuggingFace macros expand to code that
+# references types from `swift-huggingface` (HuggingFace.HubClient) and
+# `swift-transformers` (Tokenizers.Tokenizer), so we link those two
+# packages directly even though mlx-swift-lm doesn't pull them in
+# transitively.
 packages:
   MLXSwiftLM:
     url: https://github.com/ml-explore/mlx-swift-lm.git
     from: "3.31.3"
+  SwiftHuggingFace:
+    url: https://github.com/huggingface/swift-huggingface.git
+    from: "0.8.1"
+  SwiftTransformers:
+    url: https://github.com/huggingface/swift-transformers.git
+    from: "1.3.0"
 
 targets:
   ScreenshotTutor:
@@ -62,6 +71,10 @@ targets:
         product: MLXLMCommon
       - package: MLXSwiftLM
         product: MLXHuggingFace
+      - package: SwiftHuggingFace
+        product: HuggingFace
+      - package: SwiftTransformers
+        product: Transformers
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "1,2"  # iPhone + iPad

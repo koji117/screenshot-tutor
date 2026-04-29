@@ -15,6 +15,11 @@ import MLX
 import MLXLMCommon
 import MLXVLM
 import MLXHuggingFace
+// The macros below (#hubDownloader, #huggingFaceTokenizerLoader)
+// expand to code referencing HuggingFace.HubClient and
+// Tokenizers.Tokenizer; both modules must be imported here.
+import HuggingFace
+import Tokenizers
 
 @MainActor
 final class VLMRunner: ObservableObject {
@@ -51,7 +56,8 @@ final class VLMRunner: ObservableObject {
             // Cap the GPU buffer cache. iPad's unified memory is shared with
             // the rest of the system; bigger caches don't speed up our
             // single-shot summary path enough to justify the pressure.
-            MLX.GPU.set(cacheLimit: 256 * 1024 * 1024)
+            // (Memory.cacheLimit replaces the deprecated GPU.set(cacheLimit:).)
+            Memory.cacheLimit = 256 * 1024 * 1024
 
             let container = try await VLMModelFactory.shared.loadContainer(
                 from: #hubDownloader(),
@@ -83,25 +89,34 @@ final class VLMRunner: ObservableObject {
             return
         }
 
-        // Convert UIImage → CIImage for the user-input pipeline. MLX-VLM's
-        // UserInput.Image accepts `.ciImage` directly.
-        guard let cgImage = image.cgImage else {
-            state = .failed("could not read image")
+        // Persist the picked image to a temp file so we can pass a URL
+        // through the @Sendable container.perform closure. CIImage is
+        // not Sendable, so capturing one inside `perform` trips the
+        // Swift 6 concurrency checker; URL is Sendable.
+        guard let jpegData = image.jpegData(compressionQuality: 0.85) else {
+            state = .failed("could not encode image")
             return
         }
-        let ciImage = CIImage(cgImage: cgImage)
+        let imageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("st-\(UUID().uuidString).jpg")
+        do {
+            try jpegData.write(to: imageURL)
+        } catch {
+            state = .failed("could not write image: \(error.localizedDescription)")
+            return
+        }
 
         generationTask = Task { [weak self] in
             guard let self else { return }
+            defer { try? FileManager.default.removeItem(at: imageURL) }
             do {
-                let userInput = UserInput(
-                    chat: [
-                        Chat.Message.user(prompt, images: [.ciImage(ciImage)])
-                    ]
-                )
-
                 let stream: AsyncStream<Generation> = try await container.perform {
                     (context: ModelContext) in
+                    let userInput = UserInput(
+                        chat: [
+                            Chat.Message.user(prompt, images: [.url(imageURL)])
+                        ]
+                    )
                     let lmInput = try await context.processor.prepare(input: userInput)
                     let parameters = GenerateParameters(
                         maxTokens: 512,
