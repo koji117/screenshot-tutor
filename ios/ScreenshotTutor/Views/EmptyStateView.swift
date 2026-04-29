@@ -18,6 +18,7 @@ struct EmptyStateView: View {
     @State private var showDeleteConfirm: Bool = false
     @State private var showCamera: Bool = false
     @State private var pasteFailed: Bool = false
+    @State private var clipboardHasImage: Bool = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -30,6 +31,14 @@ struct EmptyStateView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
 
+            // When the user just took a screenshot and routed it to
+            // the clipboard (via Shortcut or "Copy and Delete"), this
+            // banner makes the next step a single tap.
+            if clipboardHasImage {
+                clipboardBanner
+                    .frame(maxWidth: 480)
+            }
+
             inputButtons
                 .frame(maxWidth: 480)
 
@@ -41,7 +50,10 @@ struct EmptyStateView: View {
                 .ignoresSafeArea()
         }
         .padding()
-        .onAppear { refreshDiskState() }
+        .onAppear {
+            refreshDiskState()
+            refreshClipboardState()
+        }
         .onChange(of: runner.selectedModelID) { _, _ in refreshDiskState() }
         .onChange(of: runner.state) { _, newState in
             // After a load completes the cache is freshly populated;
@@ -51,6 +63,50 @@ struct EmptyStateView: View {
             default: break
             }
         }
+        // Re-check the clipboard whenever the app comes back to the
+        // foreground — the user has likely just taken a screenshot
+        // and switched apps, so the clipboard may have an image now
+        // that wasn't there at first onAppear.
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: UIApplication.didBecomeActiveNotification
+            )
+        ) { _ in refreshClipboardState() }
+    }
+
+    /// Prominent CTA shown above the input buttons when there's an
+    /// image waiting in the clipboard. Uses
+    /// `UIPasteboard.general.hasImages`, which is a metadata-only
+    /// check on iOS 16+ and doesn't trigger the pasteboard banner.
+    /// Tapping reads the image and the parent flows it into a session.
+    private var clipboardBanner: some View {
+        Button(action: pasteFromClipboard) {
+            HStack(spacing: 12) {
+                Image(systemName: "doc.on.clipboard.fill")
+                    .font(.title2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Image ready in clipboard")
+                        .font(.headline)
+                    Text("Tap to summarize it")
+                        .font(.footnote)
+                        .opacity(0.85)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.semibold))
+                    .opacity(0.7)
+            }
+            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+            .background(Color.accentColor)
+            .foregroundColor(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func refreshClipboardState() {
+        clipboardHasImage = UIPasteboard.general.hasImages
     }
 
     /// Three input affordances: Photos library pick, fresh camera
