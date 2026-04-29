@@ -49,15 +49,48 @@ struct SessionView: View {
                 summarySection(s)
                 breakdownSection(s)
                 chatSection(s)
-                if case .generating = runner.state {
-                    Button("Cancel", role: .destructive) { cancel() }
-                        .buttonStyle(.bordered)
-                }
+                actionsRow(s)
             }
             .padding()
         }
         .onAppear { startSummaryIfNeeded(s) }
         .onDisappear { generationTask?.cancel() }
+    }
+
+    @ViewBuilder
+    private func actionsRow(_ s: Session) -> some View {
+        HStack(spacing: 12) {
+            if case .generating = runner.state {
+                Button("Cancel", role: .destructive) { cancel() }
+                    .buttonStyle(.bordered)
+            }
+            // Only offer export once we have at least a summary —
+            // exporting an empty session is useless.
+            if !s.summary.isEmpty || !streamingSummary.isEmpty {
+                exportButton(s)
+            }
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private func exportButton(_ s: Session) -> some View {
+        // Stage the markdown to a temp file each render. The file is
+        // tiny (a few KB at most) and recomputing on every state
+        // change keeps the share contents fresh as the summary /
+        // breakdown / chat fill in.
+        if let url = try? MarkdownExport.stageSession(s) {
+            ShareLink(
+                item: url,
+                preview: SharePreview(
+                    MarkdownExport.sessionFilename(s),
+                    image: Image(systemName: "doc.text")
+                )
+            ) {
+                Label("Export to Obsidian", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.bordered)
+        }
     }
 
     // MARK: - Sections
