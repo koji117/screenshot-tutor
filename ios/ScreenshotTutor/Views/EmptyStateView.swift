@@ -16,23 +16,28 @@ struct EmptyStateView: View {
     @State private var diskSizeBytes: Int64 = 0
     @State private var isDownloaded: Bool = false
     @State private var showDeleteConfirm: Bool = false
+    @State private var showCamera: Bool = false
 
     var body: some View {
         VStack(spacing: 20) {
             Text("Screenshot Tutor")
                 .font(.largeTitle.weight(.semibold))
 
-            Text("Pick a screenshot. The model summarizes it on-device — nothing leaves your iPad.")
+            Text("Pick or capture an image. The model summarizes it on-device — nothing leaves your iPad.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
 
-            ImagePickerButton(image: $pickedImage, label: "Pick a screenshot")
-                .frame(maxWidth: 360)
+            inputButtons
+                .frame(maxWidth: 480)
 
             modelPanel
                 .frame(maxWidth: 480)
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker(image: $pickedImage)
+                .ignoresSafeArea()
         }
         .padding()
         .onAppear { refreshDiskState() }
@@ -43,6 +48,29 @@ struct EmptyStateView: View {
             switch newState {
             case .ready, .idle, .failed: refreshDiskState()
             default: break
+            }
+        }
+    }
+
+    /// Two side-by-side primary actions — Photos library pick and a
+    /// fresh camera capture. The Photos picker is the existing
+    /// SwiftUI `PhotosPicker` wrapper; the camera button presents a
+    /// `UIImagePickerController` via `CameraPicker`. Camera is
+    /// hidden on environments without a camera (Simulator).
+    private var inputButtons: some View {
+        HStack(spacing: 12) {
+            ImagePickerButton(image: $pickedImage, label: "Pick a screenshot")
+            if CameraPicker.isAvailable {
+                Button {
+                    showCamera = true
+                } label: {
+                    Label("Take a photo", systemImage: "camera")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
             }
         }
     }
