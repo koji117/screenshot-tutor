@@ -1,12 +1,18 @@
 // VLMRunner.swift
 // Owns the MLX VLM container. Single instance held by the App so the
-// model survives view changes and a re-tapped "Summarize" doesn't
-// reload weights. UI observes `state` and `output` via @Published.
+// model survives view changes and re-tapping a generate button doesn't
+// reload weights.
 //
-// API matches mlx-swift-lm 3.x:
-//   - factory.loadContainer(from:#hubDownloader(), using:#huggingFaceTokenizerLoader(), …)
-//   - UserInput(chat: [Chat.Message.user(…, images: [.ciImage(…)])])
-//   - container.perform { context in MLXLMCommon.generate(…) } returns AsyncStream<Generation>
+// Public API:
+//   loadModel()                                 — download + load into memory
+//   generate(chat:maxTokens:) -> AsyncThrowingStream<String,Error>
+//                                              — stream chunks of generated text
+//   deleteModel(id:)                            — remove on-disk weights
+//   diskSize(forID:), isDownloaded(id:)         — UI helpers
+//
+// The generate API is intentionally generic — callers (SessionView,
+// SynthesisView) build the right `[Chat.Message]` for their task
+// (summarize / breakdown / chat / synthesize) using `Prompts`.
 
 import Foundation
 import SwiftUI
@@ -19,8 +25,23 @@ import MLXVLM
 // dodge Xcode's macro-trust prompts and the "Missing package product"
 // cascade those produce when the plugin fails to load.
 
+enum VLMRunnerError: LocalizedError {
+    case notLoaded
+    case simulatorUnsupported
+
+    var errorDescription: String? {
+        switch self {
+        case .notLoaded:
+            return "Model isn't loaded yet."
+        case .simulatorUnsupported:
+            return "MLX-Swift requires a real iPad — the iOS Simulator can't run Metal kernels."
+        }
+    }
+}
+
 @MainActor
 final class VLMRunner: ObservableObject {
+
     enum State: Equatable {
         case idle
         case loading(progress: Double)   // 0.0 – 1.0
@@ -30,12 +51,12 @@ final class VLMRunner: ObservableObject {
     }
 
     @Published private(set) var state: State = .idle
-    @Published private(set) var output: String = ""
     @Published var selectedModelID: String = ModelCatalog.defaultID
 
     private var container: ModelContainer?
     private var loadedModelID: String?
-    private var generationTask: Task<Void, Never>?
+
+    // MARK: - Load
 
     /// Download (if needed) and load the currently-selected model.
     /// Cheap if the model is already loaded.
@@ -52,11 +73,10 @@ final class VLMRunner: ObservableObject {
         // MLX-Swift's Metal kernels don't run in the iOS Simulator —
         // simulator Metal returns a null device-name C string that MLX
         // hands to `std::string`, which crashes inside MetalAllocator
-        // the moment we touch any GPU API. Detect early and bail out
-        // with a clear message rather than crashing on Memory.cacheLimit
-        // or the model load.
+        // the moment we touch any GPU API. Bail out early with a clear
+        // message rather than crashing on Memory.cacheLimit / model load.
         #if targetEnvironment(simulator)
-        state = .failed("MLX-Swift requires a real iPad — the iOS Simulator can't run Metal kernels.")
+        state = .failed(VLMRunnerError.simulatorUnsupported.localizedDescription)
         return
         #endif
 
@@ -64,9 +84,8 @@ final class VLMRunner: ObservableObject {
         do {
             // Cap the GPU buffer cache on real hardware. iPad's unified
             // memory is shared with the rest of the system; bigger
-            // caches don't speed up our single-shot summary path enough
-            // to justify the pressure. (Memory.cacheLimit replaces the
-            // deprecated MLX.GPU.set(cacheLimit:).)
+            // caches don't speed up our single-shot path enough to
+            // justify the pressure.
             Memory.cacheLimit = 256 * 1024 * 1024
 
             let container = try await VLMModelFactory.shared.loadContainer(
@@ -86,88 +105,71 @@ final class VLMRunner: ObservableObject {
         }
     }
 
-    /// Run a prompt against the loaded model with a single image.
-    /// Streams generated text into `output`. Cancellable via
-    /// `cancelGeneration()`.
-    func summarize(image: UIImage, prompt: String) {
-        generationTask?.cancel()
-        output = ""
-        state = .generating
+    // MARK: - Generate
 
-        guard let container else {
-            state = .failed("model not loaded")
-            return
-        }
+    /// Stream model output for a chat. The caller is responsible for
+    /// composing the right messages (see `Prompts`).
+    ///
+    /// Cancellation: cancel the consuming Task; the for-await loop
+    /// inside this method drops out via `Task.isCancelled` and the
+    /// stream finishes cleanly.
+    func generate(
+        chat: [Chat.Message],
+        maxTokens: Int = 512
+    ) -> AsyncThrowingStream<String, Error> {
+        let container = self.container
 
-        // Persist the picked image to a temp file so we can pass a URL
-        // through the @Sendable container.perform closure. CIImage is
-        // not Sendable, so capturing one inside `perform` trips the
-        // Swift 6 concurrency checker; URL is Sendable.
-        guard let jpegData = image.jpegData(compressionQuality: 0.85) else {
-            state = .failed("could not encode image")
-            return
-        }
-        let imageURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("st-\(UUID().uuidString).jpg")
-        do {
-            try jpegData.write(to: imageURL)
-        } catch {
-            state = .failed("could not write image: \(error.localizedDescription)")
-            return
-        }
-
-        generationTask = Task { [weak self] in
-            guard let self else { return }
-            defer { try? FileManager.default.removeItem(at: imageURL) }
-            do {
-                let stream: AsyncStream<Generation> = try await container.perform {
-                    (context: ModelContext) in
-                    let userInput = UserInput(
-                        chat: [
-                            Chat.Message.user(prompt, images: [.url(imageURL)])
-                        ]
-                    )
-                    let lmInput = try await context.processor.prepare(input: userInput)
-                    let parameters = GenerateParameters(
-                        maxTokens: 512,
-                        temperature: 0.0
-                    )
-                    return try MLXLMCommon.generate(
-                        input: lmInput,
-                        parameters: parameters,
-                        context: context
-                    )
+        return AsyncThrowingStream { continuation in
+            let task = Task { @MainActor in
+                guard let container else {
+                    continuation.finish(throwing: VLMRunnerError.notLoaded)
+                    return
                 }
+                state = .generating
+                do {
+                    let stream: AsyncStream<Generation> = try await container.perform {
+                        (context: ModelContext) in
+                        let userInput = UserInput(chat: chat)
+                        let lmInput = try await context.processor.prepare(input: userInput)
+                        let parameters = GenerateParameters(
+                            maxTokens: maxTokens,
+                            temperature: 0.0
+                        )
+                        return try MLXLMCommon.generate(
+                            input: lmInput,
+                            parameters: parameters,
+                            context: context
+                        )
+                    }
 
-                for await item in stream {
-                    if Task.isCancelled { break }
-                    if case .chunk(let text) = item {
-                        await MainActor.run { self.output += text }
+                    for await item in stream {
+                        if Task.isCancelled { break }
+                        if case .chunk(let text) = item {
+                            continuation.yield(text)
+                        }
+                    }
+                    continuation.finish()
+                    if case .generating = self.state { self.state = .ready }
+                } catch {
+                    continuation.finish(throwing: error)
+                    if case .generating = self.state {
+                        self.state = .failed("generation failed: \(error.localizedDescription)")
                     }
                 }
+            }
 
-                if !Task.isCancelled {
-                    await MainActor.run { self.state = .ready }
-                }
-            } catch {
-                await MainActor.run {
-                    self.state = .failed("generation failed: \(error.localizedDescription)")
-                }
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
     }
 
-    func cancelGeneration() {
-        generationTask?.cancel()
-        generationTask = nil
-        if case .generating = state { state = .ready }
-    }
+    // MARK: - Disk management
 
     /// Delete the on-disk weights for a model. If the model is the
     /// currently-loaded one, also drops it from memory so the next
     /// `loadModel()` will re-download.
     func deleteModel(id: String) async {
-        cancelGeneration()
         guard let entry = ModelCatalog.entry(id: id) else { return }
 
         if loadedModelID == id {
