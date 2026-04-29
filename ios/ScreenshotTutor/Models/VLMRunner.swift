@@ -82,11 +82,14 @@ final class VLMRunner: ObservableObject {
 
         state = .loading(progress: 0)
         do {
-            // Cap the GPU buffer cache on real hardware. iPad's unified
-            // memory is shared with the rest of the system; bigger
-            // caches don't speed up our single-shot path enough to
-            // justify the pressure.
-            Memory.cacheLimit = 256 * 1024 * 1024
+            // Squeeze the MLX GPU buffer cache hard — every MB we don't
+            // hand to the cache stays available for model weights and
+            // activations, which is what gets us under the iOS jetsam
+            // ceiling for the larger models (Gemma 4 E4B is ~3GB).
+            // 20MB matches Apple's MLXChatExample. The trade-off is a
+            // small per-call setup cost; we don't notice it on a single
+            // streaming generation.
+            Memory.cacheLimit = 20 * 1024 * 1024
 
             let container = try await VLMModelFactory.shared.loadContainer(
                 from: HFDownloader(),

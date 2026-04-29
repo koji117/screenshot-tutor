@@ -78,3 +78,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"  # iPhone + iPad
         PRODUCT_BUNDLE_IDENTIFIER: com.koji11738.screenshottutor
         SWIFT_OBJC_BRIDGING_HEADER: ""
+        # Lifts the per-app memory cap on supported iPads so multi-GB
+        # VLMs (e.g. Gemma 4 E4B) can fit without iOS jetsam killing
+        # the process partway through model load.
+        CODE_SIGN_ENTITLEMENTS: ScreenshotTutor/ScreenshotTutor.entitlements
