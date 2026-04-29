@@ -14,12 +14,10 @@ import UIKit
 import MLX
 import MLXLMCommon
 import MLXVLM
-import MLXHuggingFace
-// The macros below (#hubDownloader, #huggingFaceTokenizerLoader)
-// expand to code referencing HuggingFace.HubClient and
-// Tokenizers.Tokenizer; both modules must be imported here.
-import HuggingFace
-import Tokenizers
+// HuggingFaceBridge.swift in this target replaces the macros that
+// otherwise ship via MLXHuggingFace. We avoid the macro plugin to
+// dodge Xcode's macro-trust prompts and the "Missing package product"
+// cascade those produce when the plugin fails to load.
 
 @MainActor
 final class VLMRunner: ObservableObject {
@@ -60,8 +58,8 @@ final class VLMRunner: ObservableObject {
             Memory.cacheLimit = 256 * 1024 * 1024
 
             let container = try await VLMModelFactory.shared.loadContainer(
-                from: #hubDownloader(),
-                using: #huggingFaceTokenizerLoader(),
+                from: HFDownloader(),
+                using: HFTokenizerLoader(),
                 configuration: entry.configuration
             ) { [weak self] progress in
                 Task { @MainActor in
