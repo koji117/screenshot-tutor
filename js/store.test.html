@@ -41,9 +41,8 @@
     function resetSessions() { localStorage.removeItem(KEYS.sessions); }
 
     // --- Settings ---
-    // Default model is gemma4-e2b. On iOS the store clamps any
-    // !iosCompatible model to smolvlm-256m; these tests assume a
-    // non-iOS browser, so the clamp doesn't fire.
+    // Default model is gemma4-e2b. There is no iOS clamp — users may
+    // pick any model on any device and accept the memory trade-off.
     reset();
     assert('settings defaults', getSettings(), { model: 'gemma4-e2b', lang: 'en', historyOpen: false });
 

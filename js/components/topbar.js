@@ -1,7 +1,7 @@
 // js/components/topbar.js
 // Top bar: app title + model picker + lang toggle + history toggle.
 
-import { getSettings, setSettings, isIOS } from '../store.js';
+import { getSettings, setSettings } from '../store.js';
 import { MODELS, MODEL_IDS } from '../models.js';
 import { t } from '../i18n.js';
 
@@ -10,20 +10,15 @@ function formatSize(mb) {
   return mb + 'MB';
 }
 
-function modelOptions(selectedId, ios) {
+function modelOptions(selectedId) {
   return MODEL_IDS.map((id) => {
     const m = MODELS[id];
-    const disabled = ios && !m.iosCompatible;
-    const suffix = disabled
-      ? ' (desktop only)'
-      : ' (' + formatSize(m.sizeMB) + ')';
-    return `<option value="${id}"${id === selectedId ? ' selected' : ''}${disabled ? ' disabled' : ''}>${m.label}${suffix}</option>`;
+    return `<option value="${id}"${id === selectedId ? ' selected' : ''}>${m.label} (${formatSize(m.sizeMB)})</option>`;
   }).join('');
 }
 
 export function mountTopbar(container, { onNewSession, onToggleHistory, onModelChange }) {
   const s = getSettings();
-  const ios = isIOS();
   container.innerHTML = `
     <header class="topbar">
       <div class="topbar-title">${t('app.title', s.lang)}</div>
@@ -31,8 +26,8 @@ export function mountTopbar(container, { onNewSession, onToggleHistory, onModelC
         <button id="tb-new" type="button">${t('topbar.new', s.lang)}</button>
         <label>
           <span class="topbar-label">${t('topbar.model', s.lang)}</span>
-          <select id="tb-model"${ios ? ' title="Larger models are disabled on iPad/iPhone — they exceed Safari memory limits"' : ''}>
-            ${modelOptions(s.model, ios)}
+          <select id="tb-model">
+            ${modelOptions(s.model)}
           </select>
         </label>
         <label>

@@ -1,7 +1,7 @@
 // js/store.js
 // localStorage wrapper. All keys namespaced under screenshot-tutor-v1:*.
 
-import { MODELS, MODEL_IDS, DEFAULT_MODEL, IOS_FALLBACK_MODEL, migrateModelId } from './models.js';
+import { MODEL_IDS, DEFAULT_MODEL, migrateModelId } from './models.js';
 
 export const KEYS = {
   settings: 'screenshot-tutor-v1:settings',
@@ -30,8 +30,9 @@ function parseJson(raw, fallback) {
 }
 
 // True on iPhone/iPad Safari (incl. iPadOS Safari that reports as Mac).
-// We use this to clamp the model choice — e4b (~3GB) reliably OOM-crashes
-// the tab on iOS Safari, which the user sees as a white page mid-load.
+// Kept for UI hints (e.g. surfacing memory warnings on the model picker)
+// but no longer used to gate model selection — users are free to attempt
+// any model on iPad and accept the memory risk.
 export function isIOS() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
@@ -48,12 +49,6 @@ function validateSettings(s) {
     if (MODEL_IDS.includes(migrated)) out.model = migrated;
     if (s.lang === 'en' || s.lang === 'ja') out.lang = s.lang;
     if (typeof s.historyOpen === 'boolean') out.historyOpen = s.historyOpen;
-  }
-  // iOS Safari can't fit the heavy models (Gemma 4 reliably crashes the
-  // tab or triggers a memory-pressure reload in PWA mode). Clamp any
-  // non-iOS-compatible selection to the safest small model.
-  if (isIOS() && MODELS[out.model] && !MODELS[out.model].iosCompatible) {
-    out.model = IOS_FALLBACK_MODEL;
   }
   return out;
 }

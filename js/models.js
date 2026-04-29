@@ -7,10 +7,10 @@
 // Adding a model: append an entry below, then implement its `family`
 // loader/prompt logic in worker.js if a new family is introduced.
 //
-// `iosCompatible` gates the model in iOS Safari, where the per-tab
-// memory budget is roughly 1.5–3GB; the larger Gemma 4 models reliably
-// crash the tab partway through load (white page) or trigger a
-// memory-pressure reload in PWA mode.
+// The `note` is shown under the model in the empty-state panel and is
+// the right place to surface device-fit caveats (e.g. "may not fit on
+// iPad Safari") rather than gating selection in the UI — users are
+// trusted to decide for their hardware.
 
 export const MODELS = {
   'smolvlm-256m': {
@@ -18,7 +18,6 @@ export const MODELS = {
     family: 'smolvlm',
     label: 'SmolVLM 256M',
     sizeMB: 250,
-    iosCompatible: true,
     note: 'Tiny — fits any iPad. Lower quality on dense text.',
   },
   'smolvlm-500m': {
@@ -26,7 +25,6 @@ export const MODELS = {
     family: 'smolvlm',
     label: 'SmolVLM 500M',
     sizeMB: 500,
-    iosCompatible: true,
     note: 'Small — better quality than 256M; still fits iPad.',
   },
   'gemma4-e2b': {
@@ -34,29 +32,23 @@ export const MODELS = {
     family: 'gemma4',
     label: 'Gemma 4 E2B',
     sizeMB: 1500,
-    iosCompatible: false,
-    note: 'Strong reading. Desktop only — too big for iPad Safari.',
+    note: 'Strong reading. May not fit iPad Safari.',
   },
   'gemma4-e4b': {
     repo: 'onnx-community/gemma-4-E4B-it-ONNX',
     family: 'gemma4',
     label: 'Gemma 4 E4B',
     sizeMB: 3000,
-    iosCompatible: false,
-    note: 'Best reading. Desktop only — needs lots of memory.',
+    note: 'Best reading. Desktop-class memory recommended.',
   },
 };
 
 export const MODEL_IDS = Object.keys(MODELS);
 
-// First-time default. Conservative pick that works on Apple Silicon
-// desktops and will at least *try* on iPad (will be clamped on iOS via
-// the validator).
+// First-time default. Strong reading quality on desktop; iPad users
+// can switch to a SmolVLM model if Gemma 4 doesn't fit in their
+// browser's memory budget.
 export const DEFAULT_MODEL = 'gemma4-e2b';
-
-// Where iOS gets clamped when the saved/default model isn't compatible.
-// Smallest model ensures the user has a working experience by default.
-export const IOS_FALLBACK_MODEL = 'smolvlm-256m';
 
 // Legacy id migration. The original release used bare 'e2b' / 'e4b';
 // the registry now uses '<family>-<size>' to leave room for SmolVLM.

@@ -15,7 +15,7 @@
 
 import {
   AutoProcessor,
-  AutoModelForVision2Seq,
+  Idefics3ForConditionalGeneration,
   Gemma4ForConditionalGeneration,
   TextStreamer,
   InterruptableStoppingCriteria,
@@ -68,10 +68,16 @@ const FAMILIES = {
   smolvlm: {
     async load(repo, progress_callback) {
       const processor = await AutoProcessor.from_pretrained(repo, { progress_callback });
+      // SmolVLM is built on Idefics3. Using the explicit class here
+      // rather than AutoModelForVision2Seq because the auto resolver
+      // in transformers@4.2.0 doesn't always pick the correct class
+      // for SmolVLM, which leads to the image being silently dropped
+      // and the model generating image-blind text.
+      //
       // Mixed precision matches the official SmolVLM Transformers.js
       // demo: vision encoder + embed in fp16, decoder in q4. Picked for
       // memory rather than speed — the goal is fitting iOS Safari.
-      const model = await AutoModelForVision2Seq.from_pretrained(repo, {
+      const model = await Idefics3ForConditionalGeneration.from_pretrained(repo, {
         dtype: {
           embed_tokens: 'fp16',
           vision_encoder: 'fp16',
@@ -196,11 +202,14 @@ async function buildInputs(image, text) {
 
   const inputs = await processor(promptStr, [image]);
 
-  // Keep one safety log: if the processor didn't compute pixel_values,
-  // the model is about to generate text-only, which usually shows up
-  // as "please provide a screenshot" replies. Catch it early.
+  // Surface a warning into the UI rather than the worker console (which
+  // is invisible on mobile) when pixel_values are missing — that means
+  // the image won't reach the model and we'll get image-blind text.
   if (!inputs.pixel_values) {
-    console.warn('[buildInputs] NO pixel_values in inputs — image was not processed by the chat template');
+    self.postMessage({
+      type: 'warn',
+      message: 'image was not processed by the model — generation will be text-only',
+    });
   }
 
   return inputs;

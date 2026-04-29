@@ -61,11 +61,11 @@ works from Safari). Tap the Share button → **Add to Home Screen** →
 through iOS's 7-day storage eviction window. WebGPU is required;
 on iPad that means iPadOS 18 or later.
 
-iPad/iPhone are restricted to the SmolVLM models — Gemma 4 E2B
-(~1.5GB) and E4B (~3GB) both exceed iOS Safari's per-tab memory
-budget and either crash the tab (white page) or trigger a memory-
-pressure reload mid-load. The model picker disables Gemma 4 on iOS
-and falls back to `smolvlm-256m` automatically.
+All four models are selectable on iPad, but the larger Gemma 4
+options often exceed iOS Safari's per-tab memory budget and either
+crash the tab (white page) or trigger a memory-pressure reload mid-
+load. If that happens, switch to one of the SmolVLM models — the
+256M variant fits any iPad.
 
 ## Testing
 

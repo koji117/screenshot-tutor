@@ -35,7 +35,7 @@ window.__showToast = showToast;
 // that needs a fresh fetch. Browsers cache the Worker script separately
 // from the page, so a plain Cmd+Shift+R won't necessarily pick up a new
 // worker.js — adding ?v=N forces the browser to treat it as a new URL.
-const WORKER_VERSION = 4;
+const WORKER_VERSION = 5;
 
 let worker = createWorker();
 
@@ -49,6 +49,13 @@ function createWorker() {
     try { w.terminate(); } catch {}
     setTimeout(() => { worker = createWorker(); modelStatus.clear(); }, 200);
   };
+  // Surface diagnostic warnings from the worker as toasts so issues like
+  // "image wasn't processed by the model" are visible on mobile (where
+  // the JS console isn't reachable).
+  w.addEventListener('message', (e) => {
+    const m = e.data;
+    if (m && m.type === 'warn' && m.message) showToast(m.message, 'error');
+  });
   return w;
 }
 
