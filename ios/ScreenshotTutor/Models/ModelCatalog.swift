@@ -1,52 +1,56 @@
 // ModelCatalog.swift
-// The set of multimodal models we know how to load via MLX-VLM. Each
-// entry maps to a Hugging Face repo id under the `mlx-community`
-// namespace; quantized 4-bit ports are picked by default since they
-// fit comfortably on iPad RAM.
-//
-// Adding a model: append a `ModelEntry` below. Anything supported by
-// MLXVLM's `VLMModelFactory` works; the factory inspects the repo's
-// config.json to pick the right architecture.
+// The set of multimodal models we offer. These map to ready-made
+// `ModelConfiguration` presets in MLX-VLM's `VLMRegistry`, which
+// already point at the canonical mlx-community ONNX-style ports on
+// Hugging Face. Adding a new VLM = add another entry that picks a
+// `VLMRegistry` constant.
 
 import Foundation
 import MLXVLM
 import MLXLMCommon
 
 struct ModelEntry: Identifiable, Hashable {
-    var id: String { huggingFaceID }
+    var id: String { configuration.name }
     let label: String
-    let huggingFaceID: String
+    let configuration: ModelConfiguration
     let approxSizeMB: Int
     let note: String
 
-    /// Convert to MLXLMCommon's `ModelConfiguration` consumed by
-    /// `VLMModelFactory.loadContainer`.
-    var configuration: ModelConfiguration {
-        ModelConfiguration(id: huggingFaceID)
-    }
+    static func == (lhs: ModelEntry, rhs: ModelEntry) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
 enum ModelCatalog {
     static let entries: [ModelEntry] = [
         ModelEntry(
             label: "Qwen2-VL 2B (4-bit)",
-            huggingFaceID: "mlx-community/Qwen2-VL-2B-Instruct-4bit",
+            configuration: VLMRegistry.qwen2VL2BInstruct4Bit,
             approxSizeMB: 1500,
             note: "Strong general VLM. Good first pick on any iPad."
         ),
         ModelEntry(
-            label: "SmolVLM 500M",
-            huggingFaceID: "mlx-community/SmolVLM-500M-Instruct-bf16",
-            approxSizeMB: 1000,
+            label: "SmolVLM (4-bit)",
+            configuration: VLMRegistry.smolvlminstruct4bit,
+            approxSizeMB: 1100,
             note: "Smaller, faster. Lower quality on dense text."
         ),
         ModelEntry(
-            label: "PaliGemma 3B (4-bit)",
-            huggingFaceID: "mlx-community/paligemma-3b-mix-448-8bit",
+            label: "Qwen2.5-VL 3B (4-bit)",
+            configuration: VLMRegistry.qwen2_5VL3BInstruct4Bit,
+            approxSizeMB: 2200,
+            note: "Newer Qwen with stronger document understanding."
+        ),
+        ModelEntry(
+            label: "PaliGemma 3B (8-bit)",
+            configuration: VLMRegistry.paligemma3bMix448_8bit,
             approxSizeMB: 3500,
             note: "Document-tuned. Best for textbook pages and dense diagrams."
         ),
     ]
 
-    static let defaultModelID = entries[0].huggingFaceID
+    static let defaultID: String = entries[0].id
+
+    static func entry(id: String) -> ModelEntry? {
+        entries.first { $0.id == id }
+    }
 }

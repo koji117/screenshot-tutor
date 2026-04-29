@@ -38,12 +38,12 @@ struct EmptyStateView: View {
             Picker("Model", selection: $runner.selectedModelID) {
                 ForEach(ModelCatalog.entries) { entry in
                     Text("\(entry.label)  ·  \(formatSize(entry.approxSizeMB))")
-                        .tag(entry.huggingFaceID)
+                        .tag(entry.id)
                 }
             }
             .pickerStyle(.menu)
 
-            if let entry = ModelCatalog.entries.first(where: { $0.huggingFaceID == runner.selectedModelID }) {
+            if let entry = ModelCatalog.entry(id: runner.selectedModelID) {
                 Text(entry.note)
                     .font(.footnote)
                     .foregroundStyle(.secondary)

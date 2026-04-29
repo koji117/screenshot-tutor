@@ -17,14 +17,13 @@ settings:
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 
-# MLX-Swift-Examples bundles MLXLLM, MLXVLM, MLXLMCommon — we depend on
-# the umbrella package and import the specific products we need from
-# each target. Pin to a recent release tag rather than `main` so a
-# transient breaking change upstream doesn't break the build.
+# mlx-swift-lm now ships the LLM/VLM libraries that used to live in
+# mlx-swift-examples. Track the 3.x release line; mlx-swift-examples
+# itself only ships MNIST + StableDiffusion as products today.
 packages:
-  MLXSwiftExamples:
-    url: https://github.com/ml-explore/mlx-swift-examples
-    branch: main
+  MLXSwiftLM:
+    url: https://github.com/ml-explore/mlx-swift-lm.git
+    from: "3.31.3"
 
 targets:
   ScreenshotTutor:
@@ -57,10 +56,12 @@ targets:
         NSCameraUsageDescription: >-
           Capture a photo of a textbook page or diagram to summarize.
     dependencies:
-      - package: MLXSwiftExamples
+      - package: MLXSwiftLM
         product: MLXVLM
-      - package: MLXSwiftExamples
+      - package: MLXSwiftLM
         product: MLXLMCommon
+      - package: MLXSwiftLM
+        product: MLXHuggingFace
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "1,2"  # iPhone + iPad

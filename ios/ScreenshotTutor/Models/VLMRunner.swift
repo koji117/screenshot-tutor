@@ -3,9 +3,10 @@
 // model survives view changes and a re-tapped "Summarize" doesn't
 // reload weights. UI observes `state` and `output` via @Published.
 //
-// The actual generation pipeline (image + prompt → token stream) is
-// VLMModelFactory + ModelContainer.perform from mlx-swift-examples.
-// We sit on top of it and surface streaming text.
+// API matches mlx-swift-lm 3.x:
+//   - factory.loadContainer(from:#hubDownloader(), using:#huggingFaceTokenizerLoader(), …)
+//   - UserInput(chat: [Chat.Message.user(…, images: [.ciImage(…)])])
+//   - container.perform { context in MLXLMCommon.generate(…) } returns AsyncStream<Generation>
 
 import Foundation
 import SwiftUI
@@ -13,6 +14,7 @@ import UIKit
 import MLX
 import MLXLMCommon
 import MLXVLM
+import MLXHuggingFace
 
 @MainActor
 final class VLMRunner: ObservableObject {
@@ -26,7 +28,7 @@ final class VLMRunner: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var output: String = ""
-    @Published var selectedModelID: String = ModelCatalog.defaultModelID
+    @Published var selectedModelID: String = ModelCatalog.defaultID
 
     private var container: ModelContainer?
     private var loadedModelID: String?
@@ -39,19 +41,21 @@ final class VLMRunner: ObservableObject {
             state = .ready
             return
         }
-        guard let entry = ModelCatalog.entries.first(where: { $0.huggingFaceID == selectedModelID })
-        else {
+        guard let entry = ModelCatalog.entry(id: selectedModelID) else {
             state = .failed("unknown model id: \(selectedModelID)")
             return
         }
 
         state = .loading(progress: 0)
         do {
-            // Cap GPU memory usage. 0 = no cache; we'd rather hit weights
-            // freshly than blow the iPad's unified memory budget.
+            // Cap the GPU buffer cache. iPad's unified memory is shared with
+            // the rest of the system; bigger caches don't speed up our
+            // single-shot summary path enough to justify the pressure.
             MLX.GPU.set(cacheLimit: 256 * 1024 * 1024)
 
             let container = try await VLMModelFactory.shared.loadContainer(
+                from: #hubDownloader(),
+                using: #huggingFaceTokenizerLoader(),
                 configuration: entry.configuration
             ) { [weak self] progress in
                 Task { @MainActor in
@@ -80,7 +84,7 @@ final class VLMRunner: ObservableObject {
         }
 
         // Convert UIImage → CIImage for the user-input pipeline. MLX-VLM's
-        // UserInput accepts CIImage directly.
+        // UserInput.Image accepts `.ciImage` directly.
         guard let cgImage = image.cgImage else {
             state = .failed("could not read image")
             return
@@ -90,37 +94,33 @@ final class VLMRunner: ObservableObject {
         generationTask = Task { [weak self] in
             guard let self else { return }
             do {
-                try await container.perform { context in
-                    let userInput = UserInput(
-                        chat: [
-                            .user(prompt, images: [.ciImage(ciImage)])
-                        ]
-                    )
-                    let lmInput = try await context.processor.prepare(input: userInput)
+                let userInput = UserInput(
+                    chat: [
+                        Chat.Message.user(prompt, images: [.ciImage(ciImage)])
+                    ]
+                )
 
+                let stream: AsyncStream<Generation> = try await container.perform {
+                    (context: ModelContext) in
+                    let lmInput = try await context.processor.prepare(input: userInput)
                     let parameters = GenerateParameters(
                         maxTokens: 512,
                         temperature: 0.0
                     )
-
-                    let stream = try MLXLMCommon.generate(
+                    return try MLXLMCommon.generate(
                         input: lmInput,
                         parameters: parameters,
                         context: context
                     )
+                }
 
-                    for await item in stream {
-                        if Task.isCancelled { break }
-                        switch item {
-                        case .chunk(let text):
-                            await MainActor.run { self.output += text }
-                        case .info:
-                            continue
-                        @unknown default:
-                            continue
-                        }
+                for await item in stream {
+                    if Task.isCancelled { break }
+                    if case .chunk(let text) = item {
+                        await MainActor.run { self.output += text }
                     }
                 }
+
                 if !Task.isCancelled {
                     await MainActor.run { self.state = .ready }
                 }
