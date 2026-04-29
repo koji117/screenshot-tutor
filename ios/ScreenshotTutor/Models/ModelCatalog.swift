@@ -44,7 +44,7 @@ enum ModelCatalog {
             label: "Gemma 4 E4B (4-bit)",
             configuration: VLMRegistry.gemma4_E4B_it_4bit,
             approxSizeMB: 3000,
-            note: "Best reading quality. Heavier — comfortable on iPad Pro/Air."
+            note: "Best reading quality. Needs a paid Apple Developer account — free Personal Teams hit iOS's default ~2GB app memory cap and the OS kills the process during load."
         ),
         ModelEntry(
             label: "Qwen2.5-VL 3B (4-bit)",
