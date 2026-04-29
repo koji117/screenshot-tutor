@@ -296,6 +296,47 @@ select:focus-visible,
   min-height: 1.2em;
 }
 
+.empty-model {
+  margin: var(--s-6) auto 0;
+  padding: var(--s-4) var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  max-width: 520px;
+  text-align: left;
+  background: var(--bg-1, transparent);
+}
+
+.empty-model-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  font-size: var(--text-sm);
+}
+
+.empty-model-label {
+  font-weight: 600;
+  color: var(--ink-1, inherit);
+}
+
+.empty-model-name { font-weight: 500; }
+
+.empty-model-note {
+  font-size: var(--text-sm);
+  margin-top: var(--s-2);
+}
+
+.empty-model-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+}
+
+.empty-model-controls button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ================================================================
    Session — the screenshot, the summary, the breakdown, the chat
    ================================================================ */

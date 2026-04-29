@@ -35,7 +35,7 @@ window.__showToast = showToast;
 // that needs a fresh fetch. Browsers cache the Worker script separately
 // from the page, so a plain Cmd+Shift+R won't necessarily pick up a new
 // worker.js — adding ?v=N forces the browser to treat it as a new URL.
-const WORKER_VERSION = 3;
+const WORKER_VERSION = 4;
 
 let worker = createWorker();
 
@@ -47,10 +47,17 @@ function createWorker() {
     console.error('worker error:', e);
     showToast('Worker crashed; respawning. Click New to retry.', 'error');
     try { w.terminate(); } catch {}
-    setTimeout(() => { worker = createWorker(); }, 200);
+    setTimeout(() => { worker = createWorker(); modelStatus.clear(); }, 200);
   };
   return w;
 }
+
+// Track per-model load state so the empty-state can show "Model ready"
+// without firing another load request. A successful 'load' completion
+// flips the entry to 'ready'; switching models in the topbar resets it.
+const modelStatus = new Map();
+function getModelStatus(id) { return modelStatus.get(id) || 'idle'; }
+function setModelStatus(id, s) { modelStatus.set(id, s); }
 
 let activeSessionMount = null;
 let activeEmptyMount = null;
@@ -66,6 +73,7 @@ function showEmpty() {
   clearActiveMounts();
   main.innerHTML = '';
   activeEmptyMount = mountEmptyState(main, {
+    worker,
     onImage: (result) => {
       const session = addSession({
         image: result.image,
@@ -75,6 +83,8 @@ function showEmpty() {
       showSession(session.id);
     },
     onError: (err) => showToast(err, 'error'),
+    getModelStatus,
+    setModelStatus,
   });
 }
 
@@ -101,6 +111,12 @@ const historyMount = mountHistory(document.getElementById('history-root'), {
 mountTopbar(document.getElementById('topbar-root'), {
   onNewSession: showEmpty,
   onToggleHistory: () => historyMount.toggle(),
+  onModelChange: () => {
+    // The empty-state's "Load model" button reads the current model
+    // from settings on mount; re-mounting refreshes its label and
+    // status when the topbar dropdown changes.
+    if (activeEmptyMount) showEmpty();
+  },
 });
 
 showEmpty();

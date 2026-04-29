@@ -1,15 +1,14 @@
 // js/store.js
 // localStorage wrapper. All keys namespaced under screenshot-tutor-v1:*.
 
+import { MODELS, MODEL_IDS, DEFAULT_MODEL, IOS_FALLBACK_MODEL, migrateModelId } from './models.js';
+
 export const KEYS = {
   settings: 'screenshot-tutor-v1:settings',
   sessions: 'screenshot-tutor-v1:sessions',
 };
 
-// Default to e2b (~1.5GB). e4b (~3GB) crashes iOS Safari tabs from OOM,
-// and even on desktop is a heavier first-time download. Users with the
-// memory headroom can opt up via the Model toggle in the topbar.
-const DEFAULT_SETTINGS = { model: 'e2b', lang: 'en', historyOpen: false };
+const DEFAULT_SETTINGS = { model: DEFAULT_MODEL, lang: 'en', historyOpen: false };
 
 export const SESSION_LIMIT = 20;
 const QUOTA_BUDGET_BYTES = 4_500_000;
@@ -45,14 +44,17 @@ export function isIOS() {
 function validateSettings(s) {
   const out = { ...DEFAULT_SETTINGS };
   if (s && typeof s === 'object') {
-    if (s.model === 'e2b' || s.model === 'e4b') out.model = s.model;
+    const migrated = migrateModelId(s.model);
+    if (MODEL_IDS.includes(migrated)) out.model = migrated;
     if (s.lang === 'en' || s.lang === 'ja') out.lang = s.lang;
     if (typeof s.historyOpen === 'boolean') out.historyOpen = s.historyOpen;
   }
-  // Clamp e4b → e2b on iOS regardless of saved preference. The 3GB model
-  // exceeds iOS Safari's per-tab memory budget and the tab gets killed
-  // partway through model load (manifests as a white page).
-  if (out.model === 'e4b' && isIOS()) out.model = 'e2b';
+  // iOS Safari can't fit the heavy models (Gemma 4 reliably crashes the
+  // tab or triggers a memory-pressure reload in PWA mode). Clamp any
+  // non-iOS-compatible selection to the safest small model.
+  if (isIOS() && MODELS[out.model] && !MODELS[out.model].iosCompatible) {
+    out.model = IOS_FALLBACK_MODEL;
+  }
   return out;
 }
 

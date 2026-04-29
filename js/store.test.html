@@ -41,23 +41,24 @@
     function resetSessions() { localStorage.removeItem(KEYS.sessions); }
 
     // --- Settings ---
-    // Note: default model is e2b (smaller, fits iOS Safari). On iOS the
-    // store also clamps e4b → e2b; these tests assume a non-iOS browser.
+    // Default model is gemma4-e2b. On iOS the store clamps any
+    // !iosCompatible model to smolvlm-256m; these tests assume a
+    // non-iOS browser, so the clamp doesn't fire.
     reset();
-    assert('settings defaults', getSettings(), { model: 'e2b', lang: 'en', historyOpen: false });
+    assert('settings defaults', getSettings(), { model: 'gemma4-e2b', lang: 'en', historyOpen: false });
 
     reset();
-    setSettings({ model: 'e2b', lang: 'ja', historyOpen: true });
-    assert('settings persisted', getSettings(), { model: 'e2b', lang: 'ja', historyOpen: true });
+    setSettings({ model: 'smolvlm-256m', lang: 'ja', historyOpen: true });
+    assert('settings persisted', getSettings(), { model: 'smolvlm-256m', lang: 'ja', historyOpen: true });
 
     reset();
-    setSettings({ model: 'e4b', lang: 'en', historyOpen: false });
+    setSettings({ model: 'gemma4-e4b', lang: 'en', historyOpen: false });
     setSettings({ lang: 'ja' });
-    assert('partial update merges', getSettings(), { model: 'e4b', lang: 'ja', historyOpen: false });
+    assert('partial update merges', getSettings(), { model: 'gemma4-e4b', lang: 'ja', historyOpen: false });
 
     reset();
     setSettings({ model: 'bogus' });
-    assert('invalid model rejected', getSettings().model, 'e2b');
+    assert('invalid model rejected', getSettings().model, 'gemma4-e2b');
 
     reset();
     setSettings({ lang: 'fr' });
@@ -65,7 +66,21 @@
 
     reset();
     localStorage.setItem(KEYS.settings, '{not json');
-    assert('corrupted JSON falls back', getSettings(), { model: 'e2b', lang: 'en', historyOpen: false });
+    assert('corrupted JSON falls back', getSettings(), { model: 'gemma4-e2b', lang: 'en', historyOpen: false });
+
+    // Legacy id migration: bare 'e2b' / 'e4b' from the original release
+    // should map to the new 'gemma4-*' ids on read.
+    reset();
+    localStorage.setItem(KEYS.settings, JSON.stringify({ model: 'e2b', lang: 'en', historyOpen: false }));
+    assert('legacy e2b migrates', getSettings().model, 'gemma4-e2b');
+
+    reset();
+    localStorage.setItem(KEYS.settings, JSON.stringify({ model: 'e4b', lang: 'en', historyOpen: false }));
+    assert('legacy e4b migrates', getSettings().model, 'gemma4-e4b');
+
+    reset();
+    setSettings({ model: 'smolvlm-500m' });
+    assert('smolvlm-500m valid', getSettings().model, 'smolvlm-500m');
 
     // --- Sessions ---
     resetSessions();

@@ -19,7 +19,12 @@ Requires Chrome, Edge, or Arc on Apple Silicon (or any WebGPU-capable machine). 
 - **Follow-up chat** — ask anything about the screenshot, multi-turn
 - **English / Japanese** output (UI is bilingual too)
 - **History** — last 20 sessions saved locally; click any thumbnail to revisit
-- **Two model sizes** — `e2b` (1.5GB, faster) or `e4b` (3GB, better text reading)
+- **Four models** — pick from a small SmolVLM (fits iPad) up to Gemma 4 E4B (best reading on a beefy desktop):
+  - `smolvlm-256m` (~250MB) — tiny, fits any iPad; lower quality on dense text
+  - `smolvlm-500m` (~500MB) — small; better quality, still fits iPad
+  - `gemma4-e2b` (~1.5GB) — strong reading; desktop only
+  - `gemma4-e4b` (~3GB) — best reading; desktop only
+- **Pre-load** — a "Load model" button on the empty state warms the model up before you pick a screenshot, so the first generation isn't blocked on a multi-minute download
 
 ## Architecture
 
@@ -56,10 +61,11 @@ works from Safari). Tap the Share button → **Add to Home Screen** →
 through iOS's 7-day storage eviction window. WebGPU is required;
 on iPad that means iPadOS 18 or later.
 
-iPad/iPhone are restricted to the `e2b` model — the larger `e4b`
-(~3GB) exceeds iOS Safari's per-tab memory budget and crashes the
-tab partway through model load (you see a white page). The model
-picker disables `e4b` on iOS for this reason.
+iPad/iPhone are restricted to the SmolVLM models — Gemma 4 E2B
+(~1.5GB) and E4B (~3GB) both exceed iOS Safari's per-tab memory
+budget and either crash the tab (white page) or trigger a memory-
+pressure reload mid-load. The model picker disables Gemma 4 on iOS
+and falls back to `smolvlm-256m` automatically.
 
 ## Testing
 
