@@ -17,6 +17,7 @@ struct EmptyStateView: View {
     @State private var isDownloaded: Bool = false
     @State private var showDeleteConfirm: Bool = false
     @State private var showCamera: Bool = false
+    @State private var pasteFailed: Bool = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -52,26 +53,62 @@ struct EmptyStateView: View {
         }
     }
 
-    /// Two side-by-side primary actions — Photos library pick and a
-    /// fresh camera capture. The Photos picker is the existing
-    /// SwiftUI `PhotosPicker` wrapper; the camera button presents a
-    /// `UIImagePickerController` via `CameraPicker`. Camera is
-    /// hidden on environments without a camera (Simulator).
+    /// Three input affordances: Photos library pick, fresh camera
+    /// capture, and paste-from-clipboard. The Photos picker is the
+    /// existing SwiftUI `PhotosPicker` wrapper; the camera button
+    /// presents a `UIImagePickerController` via `CameraPicker`;
+    /// paste pulls a UIImage out of `UIPasteboard.general` so the
+    /// "Copy and Delete" path on the iPad screenshot thumbnail
+    /// flows straight into a session.
+    ///
+    /// Camera is hidden on environments without a camera (Simulator).
     private var inputButtons: some View {
-        HStack(spacing: 12) {
-            ImagePickerButton(image: $pickedImage, label: "Pick a screenshot")
-            if CameraPicker.isAvailable {
-                Button {
-                    showCamera = true
-                } label: {
-                    Label("Take a photo", systemImage: "camera")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                ImagePickerButton(image: $pickedImage, label: "Pick a screenshot")
+                if CameraPicker.isAvailable {
+                    Button {
+                        showCamera = true
+                    } label: {
+                        Label("Take a photo", systemImage: "camera")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.accentColor)
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
                 }
             }
+
+            Button {
+                pasteFromClipboard()
+            } label: {
+                Label("Paste from clipboard", systemImage: "doc.on.clipboard")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+        }
+        .alert(
+            "No image in clipboard",
+            isPresented: $pasteFailed
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Take a screenshot, tap the corner thumbnail → Done → Copy and Delete, then come back and tap Paste again.")
+        }
+    }
+
+    /// Pull a UIImage out of the system pasteboard and feed it through
+    /// the same `pickedImage` binding the Photos / Camera paths use.
+    /// Triggers iOS's standard "ScreenshotTutor pasted from another
+    /// app" banner — that's the system-mandated banner for explicit
+    /// pasteboard reads, not anything we can suppress.
+    private func pasteFromClipboard() {
+        if let image = UIPasteboard.general.image {
+            pickedImage = image
+        } else {
+            pasteFailed = true
         }
     }
 
