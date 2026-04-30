@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Lifts the per-app memory cap on supported iPads/iPhones so we
+         can hold a 3GB+ VLM (Gemma 4 E4B) in RAM during inference.
+         Without this, iOS jetsam kills the process the moment we
+         cross the default ~2GB-ish budget partway through model load.
+         Requires a paid Apple Developer Program team — Personal
+         Teams can't sign this. -->
+    <key>com.apple.developer.kernel.increased-memory-limit</key>
+    <true/>
+
+    <!-- Pairs with the above on iOS 18+ to give the process a full
+         64-bit address range so memory mapping a multi-GB weight
+         file doesn't fragment the address space. Also requires
+         paid team. -->
+    <key>com.apple.developer.kernel.extended-virtual-addressing</key>
+    <true/>
+</dict>
+</plist>

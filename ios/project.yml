@@ -78,11 +78,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"  # iPhone + iPad
         PRODUCT_BUNDLE_IDENTIFIER: com.koji11738.screenshottutor
         SWIFT_OBJC_BRIDGING_HEADER: ""
-        # Note: the Increased Memory Limit and Extended Virtual
-        # Addressing entitlements that would let us fit Gemma 4 E4B
-        # (~3GB) require a paid Apple Developer Program membership —
-        # Personal Teams can't sign them. Without those, iOS caps the
-        # app around ~2GB and jetsam kills the process during E4B's
-        # model load. Use E2B (~1.5GB) on a Personal Team cert; only
-        # add CODE_SIGN_ENTITLEMENTS pointing at an entitlements file
-        # if/when this signs with a paid team.
+        # Lifts the per-app memory cap so Gemma 4 E4B (~3GB) fits
+        # without iOS jetsam killing the process partway through
+        # load. Requires a paid Apple Developer Program team — the
+        # entitlements file is rejected by Personal Teams.
+        CODE_SIGN_ENTITLEMENTS: ScreenshotTutor/ScreenshotTutor.entitlements
