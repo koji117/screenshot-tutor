@@ -4,10 +4,29 @@
 // persisted to IndexedDB so subsequent exports are silent — the File
 // System Access API does not allow restoring a path string, only the
 // opaque handle.
+//
+// Layout written into the picked directory:
+//
+//   <picked>/
+//   ├── 2026-04-29-1430-foo.md            (with ![[attachments/...]])
+//   ├── 2026-04-29-1430-synthesis.md
+//   └── attachments/
+//       ├── 2026-04-29-1430-foo.jpg
+//       └── 2026-04-29-143012-bar-abc123.jpg
+//
+// Markdown bodies embed their source screenshot inline near the top of
+// the note (the most relevant section — the screenshot is what the
+// rest of the note describes). Synthesis exports collect every source
+// session's image into the same `attachments/` subfolder, which keeps
+// the vault tidy as exports accumulate.
 
 const DB_NAME = 'screenshot-tutor-v1';
 const STORE = 'meta';
 const KEY_EXPORT_DIR = 'exportDir';
+
+// Subdirectory inside the picked export folder where screenshots
+// land. Markdown wikilinks reference attachments via this prefix.
+const ATTACHMENTS_DIR = 'attachments';
 
 // --- Tiny IndexedDB wrapper for one-key persistence ---
 
@@ -128,6 +147,15 @@ function buildSessionFilename(session) {
   return `${ymd}-${hm}-${slug}.md`;
 }
 
+// JPEG filename used when bundling a session's screenshot into
+// attachments/. Mirrors buildSessionFilename so the .md and its image
+// share a slug.
+function buildSessionImageFilename(session) {
+  const { ymd, hm } = timestampParts(session.createdAt);
+  const slug = slugify(session.summary) || 'screenshot';
+  return `${ymd}-${hm}-${slug}.jpg`;
+}
+
 function buildSynthesisFilename(ts) {
   const { ymd, hm } = timestampParts(ts);
   return `${ymd}-${hm}-synthesis.md`;
@@ -157,7 +185,12 @@ function frontmatter(props) {
   return lines.join('\n');
 }
 
-function buildSessionMarkdown(session) {
+// `attachedImageFilename` is the JPEG name written into attachments/.
+// When provided, an `![[attachments/<name>]]` embed is rendered right
+// after the heading so the screenshot sits at the top of the note,
+// where it's most relevant — the screenshot is what the rest of the
+// note describes.
+function buildSessionMarkdown(session, attachedImageFilename) {
   const { iso } = timestampParts(session.createdAt);
   const fm = frontmatter({
     created: iso,
@@ -168,6 +201,10 @@ function buildSessionMarkdown(session) {
   const lines = [];
   lines.push(`# Screenshot summary`);
   lines.push('');
+  if (attachedImageFilename) {
+    lines.push(`![[${ATTACHMENTS_DIR}/${attachedImageFilename}]]`);
+    lines.push('');
+  }
   lines.push('## Summary');
   lines.push('');
   lines.push(session.summary || '_(no summary)_');
@@ -223,7 +260,7 @@ function buildSynthesisMarkdown(text, sessionCount, imageRefs) {
       const date = new Date(ref.createdAt).toLocaleString();
       lines.push(`**${date}**`);
       lines.push('');
-      lines.push(`![[${ref.filename}]]`);
+      lines.push(`![[${ATTACHMENTS_DIR}/${ref.filename}]]`);
       lines.push('');
     }
   }
@@ -240,37 +277,66 @@ async function writeFile(dirHandle, filename, content) {
   await writable.close();
 }
 
-// Save the session as <ymd>-<hm>-<slug>.md. Returns the filename written.
-// The screenshot itself is not exported — only the summary, breakdown,
-// and chat content go into the markdown.
+// Get or create the `attachments/` subdirectory inside the picked
+// export folder. Idempotent — `create: true` is a no-op if the
+// subdirectory already exists.
+async function getOrCreateAttachmentsDir(dirHandle) {
+  return await dirHandle.getDirectoryHandle(ATTACHMENTS_DIR, { create: true });
+}
+
+// Save the session as <ymd>-<hm>-<slug>.md alongside its screenshot at
+// attachments/<ymd>-<hm>-<slug>.jpg. The markdown embeds the screenshot
+// inline at the top via an Obsidian wikilink. Returns the filenames
+// written so the caller can show a confirmation.
 export async function exportSession(session) {
   if (!session) throw new Error('no session to export');
   const dir = await ensureExportDir();
+
+  // Try to write the screenshot first. If it succeeds, we reference
+  // it from the markdown; if not, the markdown still exports without
+  // an image embed (fail-soft, same shape as the synthesis path).
+  let imageFilename = null;
+  if (session.image) {
+    const candidate = buildSessionImageFilename(session);
+    try {
+      const blob = await (await fetch(session.image)).blob();
+      const attDir = await getOrCreateAttachmentsDir(dir);
+      await writeFile(attDir, candidate, blob);
+      imageFilename = candidate;
+    } catch {
+      // continue without image
+    }
+  }
+
   const mdFilename = buildSessionFilename(session);
-  const md = buildSessionMarkdown(session);
+  const md = buildSessionMarkdown(session, imageFilename);
   await writeFile(dir, mdFilename, md);
-  return { mdFilename };
+  return { mdFilename, imageFilename };
 }
 
 // Export the synthesis as <ymd>-<hm>-synthesis.md and write each source
-// session's screenshot as a sibling JPG that the markdown references via
-// [[wikilink]]. Opening the synthesis in Obsidian then renders the source
-// screenshots inline. Sources is the array of snapshots from synthesis.js
-// (id, image data URL, summary, createdAt).
+// session's screenshot into attachments/<...>.jpg. The markdown
+// references each image via [[attachments/...]] so opening the
+// synthesis in Obsidian renders the source screenshots inline. Sources
+// is the array of snapshots from synthesis.js (id, image data URL,
+// summary, createdAt).
 export async function exportSynthesis(text, sources) {
   if (!text || !text.trim()) throw new Error('no synthesis to export');
   if (!Array.isArray(sources)) sources = [];
   const dir = await ensureExportDir();
 
-  // Write each source image. Skip silently on per-image failure so the
-  // synthesis markdown still saves even if one image is unreadable.
+  // Write each source image into attachments/. Skip silently on
+  // per-image failure so the synthesis markdown still saves even if
+  // one image is unreadable.
   const imageRefs = [];
+  let attDir = null;
   for (const src of sources) {
     if (!src || !src.image) continue;
     const imgFilename = buildSourceImageFilename(src);
     try {
+      if (!attDir) attDir = await getOrCreateAttachmentsDir(dir);
       const blob = await (await fetch(src.image)).blob();
-      await writeFile(dir, imgFilename, blob);
+      await writeFile(attDir, imgFilename, blob);
       imageRefs.push({
         filename: imgFilename,
         createdAt: src.createdAt,
