@@ -962,6 +962,22 @@ button.primary:disabled {
 }
 
 /* ================================================================
+   Math (KaTeX)
+   ================================================================ */
+
+/* Fallback when KaTeX hasn't loaded yet (or fails): show the raw
+   TeX in a serif italic so the reader sees something readable. KaTeX
+   replaces the inner content once it loads, dropping the :empty match. */
+.math-inline:empty::before,
+.math-block:empty::before {
+  content: attr(data-tex);
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+.math-block:empty::before { display: block; }
+.math-block .katex-display { margin: var(--s-3) 0; }
+
+/* ================================================================
    Misc
    ================================================================ */
 
