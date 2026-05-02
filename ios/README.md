@@ -17,6 +17,7 @@ be generated and dependencies pinned. See "First-time setup" below.
 
 - **UI:** SwiftUI, iOS / iPadOS 17+
 - **Inference:** [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) — Apple's MLX-based LLM/VLM library (split out of `mlx-swift-examples` in late 2025). Provides `MLXVLM`, `MLXLMCommon`, `MLXHuggingFace` as Swift Package products.
+- **Math:** [SwiftMath](https://github.com/mgriebling/SwiftMath) — typesets `$...$` / `$$...$$` LaTeX from model output (textbook screenshots often produce it)
 - **Models:** mlx-community ports on Hugging Face (Qwen2-VL-2B, SmolVLM, Gemma family as published)
 - **Project gen:** [XcodeGen](https://github.com/yonaskolb/XcodeGen) so the Xcode project is reproducible from `project.yml` instead of being a hand-edited binary blob
 

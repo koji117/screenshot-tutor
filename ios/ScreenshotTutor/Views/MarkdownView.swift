@@ -12,6 +12,14 @@
 // still works in Obsidian (which interprets the tags natively) when
 // the user exports.
 //
+// LaTeX math (`$...$` inline, `$$...$$` block) is extracted at the
+// block level and rendered via `MathLatexView` (SwiftMath). When a
+// block contains math, we lay out a vertical stack of text/math runs,
+// so inline math breaks onto its own line. That trades reading flow
+// for proper math typesetting — textbooks treat important formulas as
+// visual breaks anyway, and SwiftUI doesn't compose UIViews inline
+// with `Text` cleanly.
+//
 // This is intentionally not a full markdown engine — the model output
 // is short and a heavier renderer would add build complexity.
 
@@ -149,11 +157,16 @@ struct MarkdownView: View {
     @ViewBuilder
     private func blockView(_ block: String) -> some View {
         let lines = block.split(separator: "\n", omittingEmptySubsequences: false)
+        let runs = extractMathRuns(from: block)
+        let hasMath = runs.contains { if case .math = $0 { return true } else { return false } }
 
-        // If every line in the block starts with "- " or "* ", render
-        // as a bullet list. Otherwise emit the block as a single Text
-        // with newlines preserved so it reads as a paragraph.
-        if lines.allSatisfy({ isBulletLine($0) }) {
+        // Math-bearing blocks lose bullet/heading layout in favour of a
+        // text/math vertical flow, since SwiftUI can't compose a UIView
+        // (the math) inline with a `Text`. The visual cost is small —
+        // formulas read better on their own line anyway.
+        if hasMath {
+            mathAwareView(runs: runs)
+        } else if lines.allSatisfy({ isBulletLine($0) }) {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -176,6 +189,87 @@ struct MarkdownView: View {
             }
         } else {
             inlineText(block)
+        }
+    }
+
+    // MARK: - Math runs
+
+    private enum MathRun {
+        case text(String)
+        case math(latex: String, display: Bool)
+    }
+
+    /// Walk the block character-by-character, splitting on `$$...$$`
+    /// (block math) and `$...$` (inline math). Only matches *closed*
+    /// delimiters, so a half-streamed `$x +` stays as text until the
+    /// closing `$` arrives. Inline math may not span newlines, which
+    /// avoids accidentally swallowing two unrelated `$` signs across
+    /// a paragraph break.
+    private func extractMathRuns(from block: String) -> [MathRun] {
+        var runs: [MathRun] = []
+        var pending = ""
+        var i = block.startIndex
+
+        func flushPending() {
+            if !pending.isEmpty {
+                runs.append(.text(pending))
+                pending = ""
+            }
+        }
+
+        while i < block.endIndex {
+            // $$...$$ — block math, may contain newlines.
+            if block[i...].hasPrefix("$$") {
+                let after = block.index(i, offsetBy: 2)
+                if let close = block.range(of: "$$", range: after..<block.endIndex) {
+                    flushPending()
+                    let latex = String(block[after..<close.lowerBound])
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    runs.append(.math(latex: latex, display: true))
+                    i = close.upperBound
+                    continue
+                }
+            }
+            // $...$ — inline math, single line, non-empty body.
+            if block[i] == "$" {
+                let after = block.index(after: i)
+                var j = after
+                var found: String.Index? = nil
+                while j < block.endIndex {
+                    if block[j] == "\n" { break }
+                    if block[j] == "$" { found = j; break }
+                    j = block.index(after: j)
+                }
+                if let close = found, close > after {
+                    flushPending()
+                    let latex = String(block[after..<close])
+                    runs.append(.math(latex: latex, display: false))
+                    i = block.index(after: close)
+                    continue
+                }
+            }
+            pending.append(block[i])
+            i = block.index(after: i)
+        }
+        flushPending()
+        return runs
+    }
+
+    @ViewBuilder
+    private func mathAwareView(runs: [MathRun]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(runs.enumerated()), id: \.offset) { _, run in
+                switch run {
+                case .text(let s):
+                    let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        inlineText(trimmed)
+                    }
+                case .math(let latex, let display):
+                    MathLatexView(latex: latex, display: display)
+                        .frame(maxWidth: .infinity, alignment: display ? .center : .leading)
+                }
+            }
         }
     }
 
