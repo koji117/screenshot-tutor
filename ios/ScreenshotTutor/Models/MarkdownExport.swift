@@ -169,9 +169,22 @@ enum MarkdownExport {
         return "\(parts.ymd)-\(parts.hm)-\(core).jpg"
     }
 
-    static func synthesisFilename(date: Date = Date()) -> String {
+    /// Synthesis text usually opens with `1. **Themes** — A, B, C`
+    /// because the prompt asks for that structure. Strip the leading
+    /// list ordinal before slugifying so the filename starts with
+    /// content (`themes-...`) instead of the section number
+    /// (`1-themes-...`). Falls back to plain `synthesis` if the model
+    /// produced nothing slug-worthy.
+    static func synthesisFilename(text: String = "", date: Date = Date()) -> String {
         let parts = timestampParts(date)
-        return "\(parts.ymd)-\(parts.hm)-synthesis.md"
+        let cleaned = text.replacingOccurrences(
+            of: #"^\s*(?:\d+[.)]|[-*])\s+"#,
+            with: "",
+            options: .regularExpression
+        )
+        let slug = slugify(cleaned)
+        let core = slug.isEmpty ? "synthesis" : slug
+        return "\(parts.ymd)-\(parts.hm)-\(core).md"
     }
 
     /// Bundled-image filename for a synthesis source. Uses seconds in
@@ -266,7 +279,7 @@ enum MarkdownExport {
             }
         }
 
-        let mdName = synthesisFilename(date: date)
+        let mdName = synthesisFilename(text: text, date: date)
         let mdURL = dir.appendingPathComponent(mdName)
         let body = synthesisMarkdown(
             text: text,
