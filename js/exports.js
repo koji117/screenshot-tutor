@@ -156,9 +156,16 @@ function buildSessionImageFilename(session) {
   return `${ymd}-${hm}-${slug}.jpg`;
 }
 
-function buildSynthesisFilename(ts) {
+// Synthesis text usually opens with `1. **Themes** — A, B, C` because
+// the prompt asks for that structure. Strip the leading list ordinal
+// before slugifying so the filename starts with content (`themes-...`)
+// instead of the section number (`1-themes-...`). Falls back to plain
+// `synthesis` if the model produced nothing slug-worthy.
+function buildSynthesisFilename(ts, text) {
   const { ymd, hm } = timestampParts(ts);
-  return `${ymd}-${hm}-synthesis.md`;
+  const cleaned = (text || '').replace(/^\s*(?:\d+[.)]|[-*])\s+/, '');
+  const slug = slugify(cleaned) || 'synthesis';
+  return `${ymd}-${hm}-${slug}.md`;
 }
 
 // Source screenshots embedded into a synthesis use seconds in the filename
@@ -347,7 +354,7 @@ export async function exportSynthesis(text, sources) {
   }
 
   const ts = Date.now();
-  const filename = buildSynthesisFilename(ts);
+  const filename = buildSynthesisFilename(ts, text);
   const md = buildSynthesisMarkdown(text, sources.length, imageRefs);
   await writeFile(dir, filename, md);
   return { filename, imageCount: imageRefs.length };
