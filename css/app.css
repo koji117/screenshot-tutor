@@ -296,45 +296,116 @@ select:focus-visible,
   min-height: 1.2em;
 }
 
+/* ---- Model panel — a library specimen card.
+   Hairline top rule, italic serif name, monospace-tabular size, ghost
+   text-link Load action. Reads as a catalog entry beside the empty
+   state's invitation, not a separate card competing with it. */
 .empty-model {
-  margin: var(--s-6) auto 0;
-  padding: var(--s-4) var(--s-5);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  margin: var(--s-7) auto 0;
+  padding: var(--s-5) 0 0;
   max-width: 520px;
   text-align: left;
-  background: var(--bg-1, transparent);
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
 }
 
 .empty-model-row {
   display: flex;
   align-items: baseline;
-  gap: var(--s-2);
-  font-size: var(--text-sm);
+  gap: var(--s-3);
 }
 
 .empty-model-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
   font-weight: 600;
-  color: var(--ink-1, inherit);
+  color: var(--ink-3);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
-.empty-model-name { font-weight: 500; }
+.empty-model-name {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--ink-0);
+  letter-spacing: -0.005em;
+}
+
+/* Size figure pinned to the right edge — feels like a call number. */
+.empty-model-row .muted {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0.02em;
+  margin-left: auto;
+}
 
 .empty-model-note {
-  font-size: var(--text-sm);
-  margin-top: var(--s-2);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: var(--text-base);
+  color: var(--ink-1);
+  margin-top: var(--s-3);
+  line-height: 1.55;
+  max-width: 50ch;
 }
 
 .empty-model-controls {
   display: flex;
-  align-items: center;
-  gap: var(--s-3);
-  margin-top: var(--s-3);
+  align-items: baseline;
+  gap: var(--s-4);
+  margin-top: var(--s-5);
 }
 
-.empty-model-controls button:disabled {
-  opacity: 0.6;
+/* Promote the Load action to a typographic affordance: underlined
+   link, no pill. The primary action of this screen is to upload an
+   image — the model load is supporting work. */
+.empty-model-controls #empty-load,
+.empty-model-controls #empty-load.primary {
+  background: transparent;
+  color: var(--accent);
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in oklch, var(--accent) 35%, transparent);
+  transition: color var(--d-fast) var(--ease-out),
+              text-decoration-color var(--d-fast) var(--ease-out);
+}
+
+.empty-model-controls #empty-load:hover:not(:disabled),
+.empty-model-controls #empty-load.primary:hover:not(:disabled) {
+  background: transparent;
+  color: var(--accent-hover);
+  text-decoration-color: var(--accent);
+}
+
+.empty-model-controls #empty-load:disabled,
+.empty-model-controls #empty-load.primary:disabled {
+  background: transparent;
+  color: var(--ink-3);
+  text-decoration-color: var(--line);
   cursor: default;
+  opacity: 1;
+}
+
+#empty-load-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
 }
 
 /* ================================================================
@@ -353,27 +424,37 @@ select:focus-visible,
   box-shadow: var(--shadow-sm);
 }
 
+/* Section labels read as small-caps eyebrows above each block of
+   reading material, with a generous space-above to set up the
+   reading rhythm: image → SUMMARY → BREAKDOWN → FOLLOW-UP, each
+   announced quietly, never decorated. */
 .session h2 {
-  font-family: var(--font-serif);
-  font-size: var(--text-md);
-  font-weight: 500;
-  margin: var(--s-7) 0 var(--s-3);
-  color: var(--ink-1);
-  letter-spacing: 0.005em;
-  font-style: italic;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  margin: var(--s-8) 0 var(--s-4);
+  color: var(--ink-2);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 .session h2:first-of-type { margin-top: 0; }
 
 #session-status {
-  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
   color: var(--ink-2);
-  margin-bottom: var(--s-3);
+  margin: 0 0 var(--s-3);
   min-height: 1.2em;
-  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0.04em;
 }
 
-#session-status.error { color: var(--error); }
+#session-status.error {
+  color: var(--error);
+  font-family: var(--font-sans);
+  letter-spacing: normal;
+}
 
 .session-actions {
   margin-top: var(--s-5);
@@ -537,50 +618,101 @@ button.primary:disabled {
 
 /* ================================================================
    Chat — quiet marginalia, not Slack
+
+   Each user→tutor exchange is a numbered turn (I, II, III…) marked
+   in the left margin. The user's question is set in italic serif,
+   the tutor's response in upright serif body. No bubbles, no
+   alternating tints — the question and answer are typeset like a
+   transcribed dialog in a textbook, and the running counter
+   foregrounds the *exchange* rather than the speaker.
    ================================================================ */
 
-.chat { margin: var(--s-3) 0; }
+.chat {
+  margin: var(--s-3) 0;
+  counter-reset: turn;
+}
 
 .chat-msg {
-  margin-bottom: var(--s-4);
-  padding: var(--s-4) var(--s-5);
-  border-radius: var(--r-md);
-  position: relative;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   font-family: var(--font-serif);
   font-size: var(--text-base);
-  line-height: 1.6;
+  line-height: 1.65;
+  position: relative;
+  padding-left: var(--s-7);
 }
 
 .chat-msg.chat-user {
-  background: var(--accent-soft);
-  color: oklch(28% 0.08 248);
+  counter-increment: turn;
+  margin-top: var(--s-7);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+  font-style: italic;
+  color: var(--ink-1);
+}
+
+.chat-msg.chat-user:first-child {
+  margin-top: var(--s-3);
+}
+
+/* Roman numeral marker hangs in the left margin of each user turn —
+   the only ornament the chat carries. Pinned to the top of the turn
+   so the answer flows beneath the same numeral. */
+.chat-msg.chat-user::before {
+  content: counter(turn, upper-roman);
+  position: absolute;
+  left: 0;
+  top: var(--s-4);
+  width: var(--s-6);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  font-style: normal;
+  color: var(--ink-3);
+  letter-spacing: 0.08em;
+  font-feature-settings: "tnum" 1;
+  line-height: 1.5;
 }
 
 .chat-msg.chat-assistant {
-  background: var(--surface-1);
-  border: 1px solid var(--line);
+  margin-top: var(--s-3);
+  color: var(--ink-0);
 }
 
 .chat-role {
   font-family: var(--font-sans);
   font-size: var(--text-xs);
   font-weight: 600;
-  color: var(--ink-2);
-  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   margin-bottom: var(--s-2);
+  font-style: normal;
 }
 
 .chat-text { font-size: var(--text-base); }
 .chat-text p { margin: 0 0 var(--s-3); }
 .chat-text p:last-child { margin-bottom: 0; }
-.chat-text strong { font-weight: 600; }
+.chat-text strong { font-weight: 600; color: var(--ink-0); }
 .chat-text code {
   background: var(--surface-2);
   padding: 1px 5px;
   border-radius: 3px;
   font-family: var(--font-mono);
   font-size: 0.875em;
+}
+
+/* Tighten the column on narrower viewports — the marginal numeral
+   would otherwise eat too much horizontal space. */
+@media (max-width: 600px) {
+  .chat-msg { padding-left: var(--s-6); }
+  .chat-msg.chat-user::before {
+    width: var(--s-5);
+    top: var(--s-4);
+  }
 }
 
 .chat-form {
@@ -724,10 +856,37 @@ button.primary:disabled {
   overflow-y: auto;
   flex: 1;
   padding: var(--s-2) 0;
+  counter-reset: hist;
 }
 
+/* ---- Synthesis — an end-of-term review.
+   Reads like a journal article: small-caps eyebrow over a large
+   italic-serif title, monospace-tabular byline, then body text on
+   the page (no card / no surface tint), with a drop-cap on the
+   first paragraph.
+
+   This view is misplaced inside the .history drawer rule above by
+   document order — it belongs to the main column, but lives here so
+   the related rules sit together. */
 .synthesis {
   max-width: 70ch;
+}
+
+.synthesis-masthead {
+  margin-bottom: var(--s-7);
+  padding-bottom: var(--s-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.synthesis-eyebrow {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--ink-3);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin: 0 0 var(--s-3);
+  display: block;
 }
 
 .synthesis-heading {
@@ -735,55 +894,116 @@ button.primary:disabled {
   font-size: var(--text-2xl);
   font-weight: 400;
   font-style: italic;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.018em;
   color: var(--ink-0);
-  margin: 0 0 var(--s-2);
+  margin: 0 0 var(--s-3);
+  line-height: 1.18;
 }
 
 .synthesis-sub {
-  font-family: var(--font-sans);
-  font-size: var(--text-sm);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  margin: 0 0 var(--s-5);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--ink-2);
+  margin: 0;
+}
+
+/* Strip the markdown-out card treatment for synthesis bodies — the
+   reading surface is the page itself here, not a recessed panel. */
+#synthesis-out {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  max-width: 65ch;
+  font-size: var(--text-md);
+  line-height: 1.72;
+}
+
+#synthesis-out p:first-of-type::first-letter {
+  font-family: var(--font-serif);
+  font-size: 3.4em;
+  float: left;
+  line-height: 0.92;
+  margin: 0.04em 0.08em -0.05em 0;
+  font-weight: 600;
+  font-style: normal;
+  color: var(--accent);
 }
 
 #synthesis-status {
-  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
   color: var(--ink-2);
-  margin-bottom: var(--s-3);
+  margin: var(--s-3) 0;
   min-height: 1.2em;
-  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0.04em;
 }
 
-#synthesis-status.error { color: var(--error); }
+#synthesis-status.error {
+  color: var(--error);
+  font-family: var(--font-sans);
+  letter-spacing: normal;
+}
 
+/* ---- History entry — a numbered archive record.
+   Layout columns:
+     [01]  Summary (serif, 2 lines)        [thumb]   [×]
+           Apr 29 · 14:32
+
+   The leading two-digit counter and the small thumbnail set up a
+   bibliographic-card feel; the summary is the dominant element.
+   Hairline separators between entries replace the alternating
+   row tints common to admin lists. */
 .history-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 28px 1fr 40px 24px;
+  align-items: start;
   gap: var(--s-3);
-  align-items: flex-start;
-  padding: var(--s-3) var(--s-5);
+  padding: var(--s-4) var(--s-5);
   cursor: pointer;
   position: relative;
+  border-bottom: 1px solid var(--line);
   transition: background var(--d-fast) var(--ease-out);
+  counter-increment: hist;
 }
 
+.history-item:last-child { border-bottom: 0; }
 .history-item:hover { background: var(--surface-1); }
 
-.history-item img {
-  width: 72px;
-  height: 56px;
-  object-fit: cover;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--line);
-  flex-shrink: 0;
-  background: var(--surface-2);
+.history-item::before {
+  content: counter(hist, decimal-leading-zero);
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+  font-feature-settings: "tnum" 1;
+  padding-top: 2px;
+  align-self: start;
 }
 
 .history-item-body {
-  flex: 1;
+  grid-column: 2;
+  grid-row: 1 / span 2;
   min-width: 0;
-  padding-top: 1px;
+}
+
+.history-item img {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: start;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  margin-top: 1px;
 }
 
 .history-item-summary {
@@ -798,15 +1018,17 @@ button.primary:disabled {
 }
 
 .history-item-time {
-  font-family: var(--font-sans);
-  font-size: var(--text-xs);
-  margin-top: var(--s-1);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  margin-top: var(--s-2);
   color: var(--ink-2);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0.06em;
 }
 
 .history-delete {
+  grid-column: 4;
+  grid-row: 1;
   background: none;
   border: none;
   color: var(--ink-3);

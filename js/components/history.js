@@ -4,6 +4,20 @@
 import { getSessions, deleteSession, getSettings, setSettings } from '../store.js';
 import { t } from '../i18n.js';
 
+// Tight bibliographic-card timestamp: "Apr 29 · 14:32" / 「4月29日 · 14:32」
+// rather than `toLocaleString()`'s noisy "4/29/2026, 2:32:00 PM" default.
+// Renders via the user's locale so the month abbreviation localizes
+// (Apr / 4月) but the time is forced to 24h with leading zeros so the
+// monospace numerals align column-to-column in the list.
+function formatHistoryTime(ts, lang) {
+  const d = new Date(ts);
+  const locale = lang === 'ja' ? 'ja-JP' : undefined;
+  const datePart = d.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${datePart} · ${hh}:${mm}`;
+}
+
 export function mountHistory(container, { onSelect, onSynthesize }) {
   const s = getSettings();
   let isOpen = !!s.historyOpen;
@@ -34,7 +48,7 @@ export function mountHistory(container, { onSelect, onSynthesize }) {
                   <img src="${sess.imageThumb || sess.image}" alt="">
                   <div class="history-item-body">
                     <div class="history-item-summary">${(sess.summary || '').slice(0, 80) || '(generating…)'}</div>
-                    <div class="history-item-time muted">${new Date(sess.createdAt).toLocaleString()}</div>
+                    <div class="history-item-time">${formatHistoryTime(sess.createdAt, s.lang)}</div>
                   </div>
                   <button class="history-delete" data-delete="${sess.id}" type="button" aria-label="Delete">×</button>
                 </div>

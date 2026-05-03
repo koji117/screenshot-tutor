@@ -30,11 +30,19 @@ export function mountSynthesis(container, { worker, onAfterClear }) {
     createdAt: sess.createdAt,
   }));
 
+  // Masthead reads like a journal article: small-caps eyebrow above
+  // an italic-serif title, monospace byline. The body that follows
+  // (#synthesis-out) is set as page text — see the synthesis CSS
+  // block, which strips the markdown-out card treatment for it and
+  // applies a drop-cap to the opening paragraph.
   container.innerHTML = `
     <div class="synthesis">
-      <h2 class="synthesis-heading">${t('synthesis.heading', s.lang)}</h2>
-      <p class="synthesis-sub muted">${tFmt('synthesis.subheading', s.lang, { count: sessionCount })}</p>
-      <div id="synthesis-status" class="muted"></div>
+      <header class="synthesis-masthead">
+        <span class="synthesis-eyebrow">${t('synthesis.eyebrow', s.lang)}</span>
+        <h1 class="synthesis-heading">${t('synthesis.heading', s.lang)}</h1>
+        <p class="synthesis-sub">${tFmt('synthesis.subheading', s.lang, { count: sessionCount })}</p>
+      </header>
+      <div id="synthesis-status"></div>
       <div id="synthesis-out" class="markdown-out"></div>
       <div class="session-actions">
         <button id="synthesis-cancel" style="display:none" type="button">${t('session.cancel', s.lang)}</button>
