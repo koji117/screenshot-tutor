@@ -4,9 +4,6 @@
 // multi-minute weight download.
 //
 // Layout (top to bottom):
-//   • Hero character — a monkey with a camera. Visual identity
-//     for the home screen; replaces the marketing-tone subtitle
-//     that used to live here.
 //   • Clipboard banner (only when an image is detected). Pure
 //     signal — points the user at the input row's paste rows,
 //     carries no buttons of its own.
@@ -64,8 +61,6 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            tappableHero
-
             // 640pt feels right across the iPad range — narrow
             // enough to read comfortably on iPad mini, wide enough
             // not to look like a phone-content island on a 13"
@@ -144,52 +139,6 @@ struct EmptyStateView: View {
                 for: UIApplication.didBecomeActiveNotification
             )
         ) { _ in refreshClipboardState() }
-    }
-
-    // MARK: - Hero
-
-    /// Tappable wrapper around the mascot. Tapping the home hero
-    /// opens the Photos picker — the most-likely first action on
-    /// a fresh screen. Selection haptic on tap, then PhotosPicker
-    /// drives the rest of the flow through the same `pickedImage`
-    /// binding the sibling button uses.
-    private var tappableHero: some View {
-        PhotosPicker(
-            selection: $photosItem,
-            matching: .any(of: [.screenshots, .images]),
-            photoLibrary: .shared()
-        ) {
-            heroCharacter
-        }
-        .buttonStyle(.plain)
-        .simultaneousGesture(
-            TapGesture().onEnded {
-                UISelectionFeedbackGenerator().selectionChanged()
-            }
-        )
-        .accessibilityHint("Pick a screenshot")
-    }
-
-    /// State-aware mascot — same monkey, different second glyph
-    /// per `runner.state`. Swaps without animation; the brand
-    /// voice is "calm, scholarly, patient" — no bouncing, no
-    /// blinking, just a quiet identity that signals what the app
-    /// is doing.
-    private var heroCharacter: some View {
-        let glyph = MascotState.from(runner.state)
-        return HStack(alignment: .center, spacing: -2) {
-            Text(glyph.primary)
-                .font(.system(size: 64))
-            if let secondary = glyph.secondary {
-                Text(secondary)
-                    .font(.system(size: 36))
-                    .rotationEffect(.degrees(-12))
-                    .offset(x: -6, y: 8)
-            }
-        }
-        .padding(.top, 4)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(glyph.accessibilityLabel)
     }
 
     // MARK: - Banner

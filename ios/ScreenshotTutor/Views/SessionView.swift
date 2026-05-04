@@ -84,17 +84,11 @@ struct SessionView: View {
                     }
                 }
         } else {
-            ContentUnavailableView {
-                VStack(spacing: 8) {
-                    Text(MascotState.lost.primary)
-                        .font(.system(size: 56))
-                    Text("Couldn't find that one")
-                        .font(.headline)
-                }
-            } description: {
-                Text("It may have been deleted from history.")
-            }
-            .accessibilityLabel("Session not found")
+            ContentUnavailableView(
+                "Session not found",
+                systemImage: "exclamationmark.triangle",
+                description: Text("It may have been deleted from history.")
+            )
         }
     }
 
