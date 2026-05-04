@@ -58,7 +58,7 @@ struct SynthesisView: View {
                 } else {
                     statusLine
                     if !streamingOutput.isEmpty {
-                        MarkdownView(text: streamingOutput)
+                        MarkdownView(text: streamingOutput).equatable()
                     }
                     if didSucceed {
                         sourcesDisclosure
@@ -178,7 +178,7 @@ struct SynthesisView: View {
     @ViewBuilder
     private func sourceRow(_ s: Session) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            if let ui = UIImage(contentsOfFile: store.thumbURL(for: s).path) {
+            if let ui = store.thumb(for: s) {
                 Image(uiImage: ui)
                     .resizable()
                     .scaledToFill()
@@ -275,9 +275,24 @@ struct SynthesisView: View {
             ]
             let stream = runner.generate(chat: chat, maxTokens: 600)
             do {
+                // Coalesce token chunks into ~16ms windows so
+                // streamingOutput's @State writes don't trigger a
+                // markdown re-parse on every token. See SessionView's
+                // runStream for the same pattern.
+                var pending = ""
+                var lastFlush = ContinuousClock.now
                 for try await chunk in stream {
                     if Task.isCancelled { break }
-                    streamingOutput += chunk
+                    pending += chunk
+                    let now = ContinuousClock.now
+                    if now - lastFlush >= .milliseconds(16) {
+                        streamingOutput += pending
+                        pending = ""
+                        lastFlush = now
+                    }
+                }
+                if !Task.isCancelled, !pending.isEmpty {
+                    streamingOutput += pending
                 }
                 if !Task.isCancelled {
                     didSucceed = true

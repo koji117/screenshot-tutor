@@ -25,6 +25,22 @@ final class SessionStore: ObservableObject {
     private let thumbsDir: URL
     private let sessionsFile: URL
 
+    /// In-memory decode cache for the JPEGs on disk. SwiftUI body
+    /// recomputation fires constantly during streaming generation —
+    /// without this, every chunk re-decoded the screenshot from
+    /// scratch on each render. Keyed by relative filename so both
+    /// images/ and thumbs/ live in the same cache (the paths are
+    /// distinct).
+    ///
+    /// `NSCache` evicts under memory pressure automatically, so we
+    /// don't have to bound this manually. Cap at 30 entries (20
+    /// session limit × 1 image + 1 thumb each, with headroom).
+    private let imageCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 30
+        return cache
+    }()
+
     init() {
         let fm = FileManager.default
         let support = (try? fm.url(
@@ -51,6 +67,42 @@ final class SessionStore: ObservableObject {
     }
     func thumbURL(for session: Session) -> URL {
         thumbsDir.appendingPathComponent(session.thumbPath)
+    }
+
+    // MARK: - Cached image accessors
+
+    /// Decoded `UIImage` for a session's main screenshot, served
+    /// from cache after first read. Use this from views — calling
+    /// `UIImage(contentsOfFile:)` directly inside a SwiftUI body
+    /// re-decodes the JPEG on every recomputation, which is brutal
+    /// during streaming.
+    func image(for session: Session) -> UIImage? {
+        loadCached(at: imageURL(for: session), key: session.imagePath)
+    }
+
+    /// Decoded thumbnail (240px max edge). Used by sidebar / source
+    /// rows where the full-size image would be wasteful.
+    func thumb(for session: Session) -> UIImage? {
+        loadCached(at: thumbURL(for: session), key: session.thumbPath)
+    }
+
+    private func loadCached(at url: URL, key: String) -> UIImage? {
+        let nsKey = key as NSString
+        if let cached = imageCache.object(forKey: nsKey) {
+            return cached
+        }
+        guard let image = UIImage(contentsOfFile: url.path) else {
+            return nil
+        }
+        imageCache.setObject(image, forKey: nsKey)
+        return image
+    }
+
+    /// Drop the cache entry for a deleted session so we don't keep
+    /// a phantom UIImage in memory after its file is gone.
+    private func evictCache(for session: Session) {
+        imageCache.removeObject(forKey: session.imagePath as NSString)
+        imageCache.removeObject(forKey: session.thumbPath as NSString)
     }
 
     // MARK: - Lookup
@@ -114,6 +166,7 @@ final class SessionStore: ObservableObject {
         let removed = sessions.remove(at: idx)
         try? FileManager.default.removeItem(at: imageURL(for: removed))
         try? FileManager.default.removeItem(at: thumbURL(for: removed))
+        evictCache(for: removed)
         save()
     }
 
@@ -123,6 +176,7 @@ final class SessionStore: ObservableObject {
         for session in sessions {
             try? FileManager.default.removeItem(at: imageURL(for: session))
             try? FileManager.default.removeItem(at: thumbURL(for: session))
+            evictCache(for: session)
         }
         sessions.removeAll()
         save()
@@ -153,6 +207,7 @@ final class SessionStore: ObservableObject {
             let removed = sessions.removeLast()
             try? FileManager.default.removeItem(at: imageURL(for: removed))
             try? FileManager.default.removeItem(at: thumbURL(for: removed))
+            evictCache(for: removed)
         }
         save()
     }

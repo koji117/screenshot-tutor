@@ -111,7 +111,7 @@ struct HistorySidebar: View {
     @ViewBuilder
     private func row(_ session: Session) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            if let ui = UIImage(contentsOfFile: store.thumbURL(for: session).path) {
+            if let ui = store.thumb(for: session) {
                 Image(uiImage: ui)
                     .resizable()
                     .scaledToFill()

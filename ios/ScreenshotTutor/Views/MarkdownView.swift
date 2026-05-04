@@ -25,8 +25,18 @@
 
 import SwiftUI
 
-struct MarkdownView: View {
+struct MarkdownView: View, Equatable {
     let text: String
+
+    /// SwiftUI body recomputes whenever the parent re-renders, even
+    /// if `text` is unchanged. Conforming to `Equatable` lets
+    /// callers wrap us in `.equatable()` so the body is skipped
+    /// entirely when text hasn't moved — important on the session
+    /// screen where a chat-input keystroke would otherwise trigger
+    /// a markdown re-parse on every other section.
+    static func == (lhs: MarkdownView, rhs: MarkdownView) -> Bool {
+        lhs.text == rhs.text
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

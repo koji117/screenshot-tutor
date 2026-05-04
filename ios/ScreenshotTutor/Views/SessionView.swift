@@ -79,7 +79,7 @@ struct SessionView: View {
                     .ignoresSafeArea()
                 }
                 .fullScreenCover(isPresented: $showZoom) {
-                    if let img = UIImage(contentsOfFile: store.imageURL(for: s).path) {
+                    if let img = store.image(for: s) {
                         ImageZoomView(image: img)
                     }
                 }
@@ -194,7 +194,7 @@ struct SessionView: View {
 
     @ViewBuilder
     private func screenshotImage(_ s: Session) -> some View {
-        if let uiImage = UIImage(contentsOfFile: store.imageURL(for: s).path) {
+        if let uiImage = store.image(for: s) {
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 showZoom = true
@@ -254,7 +254,7 @@ struct SessionView: View {
             }
             statusLine
             if hasText {
-                MarkdownView(text: displayed)
+                MarkdownView(text: displayed).equatable()
                     .opacity(isRegenerating ? 0.35 : 1)
                     .animation(.easeInOut(duration: 0.2), value: isRegenerating)
             }
@@ -349,7 +349,7 @@ struct SessionView: View {
             if role == .user { Spacer(minLength: 32) }
 
             VStack(alignment: .leading, spacing: 4) {
-                MarkdownView(text: text)
+                MarkdownView(text: text).equatable()
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 14)
@@ -584,6 +584,13 @@ struct SessionView: View {
 
     /// Common scaffold for summarize/breakdown/chat: ensure model
     /// loaded, run the stream, route chunks/done/error.
+    ///
+    /// Token chunks are coalesced into ~16ms windows before being
+    /// handed off to `onChunk` — without this, every token (often
+    /// 1–3 chars) triggers a SwiftUI `@State` write and re-renders
+    /// every visible markdown view, which on a long generation
+    /// turns into O(N²) markdown parsing. Coalescing caps the
+    /// re-render rate at ~60Hz regardless of model token speed.
     private func runStream(
         chat: [Chat.Message],
         maxTokens: Int,
@@ -596,9 +603,20 @@ struct SessionView: View {
             guard case .ready = runner.state else { return }
             let stream = runner.generate(chat: chat, maxTokens: maxTokens)
             do {
+                var pending = ""
+                var lastFlush = ContinuousClock.now
                 for try await chunk in stream {
                     if Task.isCancelled { break }
-                    onChunk(chunk)
+                    pending += chunk
+                    let now = ContinuousClock.now
+                    if now - lastFlush >= .milliseconds(16) {
+                        onChunk(pending)
+                        pending = ""
+                        lastFlush = now
+                    }
+                }
+                if !Task.isCancelled, !pending.isEmpty {
+                    onChunk(pending)
                 }
                 if !Task.isCancelled { onDone() }
             } catch {
