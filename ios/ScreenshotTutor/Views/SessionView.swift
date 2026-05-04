@@ -100,6 +100,7 @@ struct SessionView: View {
                 summarySection(s)
                 breakdownSection(s)
                 chatHistorySection(s)
+                inlineActionsRow(s)
             }
             .padding()
             // Reserve room at the bottom so the pinned composer doesn't
@@ -180,14 +181,43 @@ struct SessionView: View {
 
     private func exportToolbarButton(_ s: Session) -> some View {
         Button {
-            let imageURL = store.imageURL(for: s)
-            pendingExport = try? MarkdownExport.stageSession(
-                s, sourceImageURL: imageURL
-            )
+            stageExport(s)
         } label: {
             Label("Export to Obsidian", systemImage: "square.and.arrow.down")
         }
         .keyboardShortcut("e", modifiers: .command)
+    }
+
+    /// Inline action row that mirrors the toolbar's Export. Toolbar
+    /// items render icon-only on iPad and the down-arrow icon alone
+    /// isn't a strong "Export to Obsidian" signal — so this row,
+    /// shown after the chat thread (or directly under the breakdown
+    /// when no chat exists), gives a fully-labeled button. Hidden
+    /// while the model is busy so it doesn't compete with the
+    /// status spinner.
+    @ViewBuilder
+    private func inlineActionsRow(_ s: Session) -> some View {
+        let hasSummary = !s.summary.isEmpty || !streamingSummary.isEmpty
+        if hasSummary, !isBusy {
+            HStack {
+                Button {
+                    stageExport(s)
+                } label: {
+                    Label("Export to Obsidian", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                Spacer()
+            }
+            .padding(.top, 8)
+        }
+    }
+
+    private func stageExport(_ s: Session) {
+        let imageURL = store.imageURL(for: s)
+        pendingExport = try? MarkdownExport.stageSession(
+            s, sourceImageURL: imageURL
+        )
     }
 
     // MARK: - Sections
