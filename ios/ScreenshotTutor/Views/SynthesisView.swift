@@ -200,24 +200,8 @@ struct SynthesisView: View {
         }
     }
 
-    /// Inline action row shown after a successful synthesis. The
-    /// Export button mirrors the toolbar's icon-only version so
-    /// the action is discoverable inline; the toolbar version
-    /// stays for ⌘E and quick-access. Archive is destructive and
-    /// lives only here, with confirmation behind a dialog.
     private var actionsRow: some View {
         HStack(spacing: 12) {
-            Button {
-                pendingExport = try? MarkdownExport.stageSynthesis(
-                    text: streamingOutput,
-                    sessions: sourceSessions,
-                    imageURL: { store.imageURL(for: $0) }
-                )
-            } label: {
-                Label("Export to Obsidian", systemImage: "square.and.arrow.down")
-            }
-            .buttonStyle(.bordered)
-
             Button(role: .destructive) {
                 showArchiveConfirm = true
             } label: {
