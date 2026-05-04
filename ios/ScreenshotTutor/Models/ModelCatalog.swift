@@ -41,10 +41,13 @@ enum ModelCatalog {
         ),
     ]
 
-    /// First-time default. E2B fits everywhere; users can opt up to
-    /// E4B from the picker once they've confirmed it loads on their
-    /// device.
-    static let defaultID: String = entries[0].id
+    /// First-time default. E4B is the higher-quality option and is
+    /// the right pick on devices with the increased-memory
+    /// entitlement (paid Apple Developer signing + iPad Air / Pro /
+    /// mini 7+ class hardware). Users can drop down to E2B from
+    /// Settings or the empty-state picker if their device can't
+    /// fit the heavier weights.
+    static let defaultID: String = entries[1].id
 
     static func entry(id: String) -> ModelEntry? {
         entries.first { $0.id == id }
