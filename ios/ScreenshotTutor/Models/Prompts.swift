@@ -26,22 +26,35 @@ enum Prompts {
         case .en:
             return """
             You are a study tutor. Look at this screenshot and produce a concise \
-            study-friendly summary in markdown. Format: a one-sentence TL;DR (bold), \
-            then 3-5 key bullet points. Focus on what someone studying this material \
-            needs to take away. If it is code, summarize what the code does and the \
-            key concept it demonstrates. If it is a problem, identify the problem \
-            type and solution approach without giving away the answer. Keep it \
-            under 200 words.
+            study-friendly summary in markdown with these three sections:
+
+            1. A one-sentence **TL;DR** in bold.
+            2. 3-5 key bullet points.
+            3. An **Analogy** (one or two sentences) that grounds the main idea in \
+            a familiar everyday situation, giving the learner something concrete to \
+            anchor the concept to. Pick a comparison that genuinely illuminates the \
+            mechanism rather than a generic "like a recipe" filler.
+
+            Focus on what someone studying this material needs to take away. If it \
+            is code, summarize what the code does and the key concept it demonstrates. \
+            If it is a problem, identify the problem type and solution approach \
+            without giving away the answer. Keep the whole reply under 250 words.
             """
         case .ja:
             return """
             あなたは学習サポートの家庭教師です。このスクリーンショットを見て、\
-            学習者向けの簡潔な要約を Markdown で作成してください。\
-            フォーマット: 1文で太字の TL;DR、その後に 3〜5 個の重要なポイントを箇条書きで。\
+            学習者向けの簡潔な要約を Markdown で次の 3 つの構成で作成してください:
+
+            1. 1 文の太字の **TL;DR**。
+            2. 重要なポイントを 3〜5 個の箇条書きで。
+            3. **たとえ**（1〜2 文）— 中心となる考えを身近で具体的な状況にたとえて、\
+            学習者がイメージしやすい形にしてください。仕組みを本当に照らし出すたとえを\
+            選び、「レシピのようなもの」といった当たり障りのない比喩は避けてください。
+
             これを学んでいる人が押さえるべき要点に絞ってください。\
             コードであれば、コードが何をするかと示している重要な概念を要約してください。\
             問題であれば、答えを言わずに問題のタイプと解法のアプローチを示してください。\
-            200語以内に収めてください。
+            全体で 250 語以内に収めてください。
             """
         }
     }
