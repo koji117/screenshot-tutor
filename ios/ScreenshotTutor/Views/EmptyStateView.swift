@@ -133,26 +133,31 @@ struct EmptyStateView: View {
 
     // MARK: - Banner
 
-    /// iOS notification-style tinted panel shown when there's an
-    /// image waiting in the clipboard. Two PasteButtons inside, one
-    /// per paste mode. Detection is `UIPasteboard.general.hasImages`
-    /// (metadata only — doesn't trigger the "Allow Paste" prompt).
+    /// iOS notification-style tinted hint shown when there's an
+    /// image waiting in the clipboard. Carries no PasteButtons of
+    /// its own — those live in the input row below and stay
+    /// visible regardless of clipboard state. The banner exists
+    /// purely as a "your screenshot is ready" cue, pointing the
+    /// user's eye at the paste rows.
+    ///
+    /// Detection is `UIPasteboard.general.hasImages` (metadata-only;
+    /// doesn't trigger the "Allow Paste" prompt).
     private var clipboardBanner: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "doc.on.clipboard.fill")
-                    .font(.title3)
-                    .foregroundStyle(.tint)
+        HStack(spacing: 10) {
+            Image(systemName: "doc.on.clipboard.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Image ready in clipboard")
                     .font(.headline)
-                Spacer()
+                Text("Tap a Paste option below")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
-            HStack(spacing: 12) {
-                pasteAction(.crop, caption: "Crop a region")
-                pasteAction(.full, caption: "Use full image")
-            }
+            Spacer()
         }
-        .padding(16)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
         .background(Color.accentColor.opacity(0.10))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -161,54 +166,64 @@ struct EmptyStateView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    // MARK: - Input row
+
+    /// Four input affordances. Photos and Camera (top row) are the
+    /// always-explicit picks. The two Paste rows below are always
+    /// visible — the system PasteButton auto-disables when the
+    /// clipboard has no image, which serves as the visual cue.
+    /// When the clipboard *does* have an image, the banner above
+    /// flags it and the buttons here become enabled.
+    private var inputButtons: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                // Pre-filter to screenshots first, falling back to
+                // any image. The Photos app's Screenshots album is
+                // where almost every pick will come from, so landing
+                // the user there saves a tap.
+                PhotosPicker(
+                    selection: $photosItem,
+                    matching: .any(of: [.screenshots, .images]),
+                    photoLibrary: .shared()
+                ) {
+                    Label("Pick a screenshot", systemImage: "photo.on.rectangle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+
+                if CameraPicker.isAvailable {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        showCamera = true
+                    } label: {
+                        Label("Take a photo", systemImage: "camera")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
+            }
+
+            // Two paste paths, each captioned with what happens
+            // after the paste. PasteButton's own label is system-
+            // controlled and reads "Paste" — the caption beside it
+            // tells the two rows apart.
+            pasteRow(.crop, caption: "Crop a region")
+            pasteRow(.full, caption: "Use full image")
+        }
+    }
+
     @ViewBuilder
-    private func pasteAction(_ mode: PasteMode, caption: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private func pasteRow(_ mode: PasteMode, caption: String) -> some View {
+        HStack(spacing: 12) {
             PasteButton(supportedContentTypes: [UTType.image]) { providers in
                 handlePaste(providers, mode: mode)
             }
             Text(caption)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: - Input row
-
-    /// Two always-available input affordances: Photos library pick
-    /// and Camera. Paste actions live exclusively in the clipboard
-    /// banner above and only appear when there's actually an image
-    /// to paste — duplicating them here would mean four "Paste"
-    /// buttons on screen at once whenever the clipboard had content,
-    /// and two disabled "Paste" buttons whenever it didn't.
-    private var inputButtons: some View {
-        HStack(spacing: 12) {
-            // Pre-filter to screenshots first, falling back to any
-            // image. The Photos app's Screenshots album is where
-            // almost every pick will come from in this app, so
-            // landing the user there saves a tap.
-            PhotosPicker(
-                selection: $photosItem,
-                matching: .any(of: [.screenshots, .images]),
-                photoLibrary: .shared()
-            ) {
-                Label("Pick a screenshot", systemImage: "photo.on.rectangle")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-
-            if CameraPicker.isAvailable {
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    showCamera = true
-                } label: {
-                    Label("Take a photo", systemImage: "camera")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-            }
+            Spacer(minLength: 0)
         }
     }
 
