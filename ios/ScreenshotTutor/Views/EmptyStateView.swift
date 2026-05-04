@@ -6,6 +6,7 @@
 
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct EmptyStateView: View {
     @EnvironmentObject var runner: VLMRunner
@@ -17,7 +18,6 @@ struct EmptyStateView: View {
     @State private var isDownloaded: Bool = false
     @State private var showDeleteConfirm: Bool = false
     @State private var showCamera: Bool = false
-    @State private var pasteFailed: Bool = false
     @State private var clipboardHasImage: Bool = false
 
     var body: some View {
@@ -74,48 +74,73 @@ struct EmptyStateView: View {
         ) { _ in refreshClipboardState() }
     }
 
-    /// Prominent CTA shown above the input buttons when there's an
-    /// image waiting in the clipboard. Uses
-    /// `UIPasteboard.general.hasImages`, which is a metadata-only
-    /// check on iOS 16+ and doesn't trigger the pasteboard banner.
-    /// Tapping reads the image and the parent flows it into a session.
+    /// Prominent banner shown when there's an image waiting in the
+    /// clipboard. The detection uses `UIPasteboard.general.hasImages`,
+    /// a metadata-only check that does not trigger the "Allow Paste"
+    /// prompt. The actual paste action is a system `PasteButton` —
+    /// that's the iOS-vetted control that bypasses the prompt because
+    /// Apple treats an explicit tap on it as user authorization.
     private var clipboardBanner: some View {
-        Button(action: pasteFromClipboard) {
-            HStack(spacing: 12) {
-                Image(systemName: "doc.on.clipboard.fill")
-                    .font(.title2)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Image ready in clipboard")
-                        .font(.headline)
-                    Text("Tap to summarize it")
-                        .font(.footnote)
-                        .opacity(0.85)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.semibold))
-                    .opacity(0.7)
+        HStack(spacing: 12) {
+            Image(systemName: "doc.on.clipboard.fill")
+                .font(.title2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Image ready in clipboard")
+                    .font(.headline)
+                Text("Tap Paste to summarize it")
+                    .font(.footnote)
+                    .opacity(0.85)
             }
-            .padding(.vertical, 14)
-            .padding(.horizontal, 16)
-            .background(Color.accentColor)
-            .foregroundColor(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            Spacer()
+            pasteControl
+                .tint(.white)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+        .background(Color.accentColor)
+        .foregroundColor(.white)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// The system paste button. Auto-disables when the clipboard has
+    /// no image-typed item, so it doubles as a "paste is available"
+    /// indicator. Crucially, it does NOT trigger the "Allow Paste"
+    /// prompt — iOS treats an explicit tap on a `PasteButton` as
+    /// authorization, the same way it treats `Cmd+V` from the
+    /// hardware keyboard.
+    private var pasteControl: some View {
+        PasteButton(supportedContentTypes: [UTType.image]) { providers in
+            handlePaste(providers)
+        }
     }
 
     private func refreshClipboardState() {
         clipboardHasImage = UIPasteboard.general.hasImages
     }
 
+    /// Pull the first UIImage out of the picked NSItemProviders and
+    /// feed it through `pickedImage`. Off-main-thread by default
+    /// because `loadObject` can block on disk; we hop back to the
+    /// main actor before mutating the binding.
+    private func handlePaste(_ providers: [NSItemProvider]) {
+        guard let provider = providers.first(where: {
+            $0.canLoadObject(ofClass: UIImage.self)
+        }) else { return }
+        provider.loadObject(ofClass: UIImage.self) { object, _ in
+            guard let image = object as? UIImage else { return }
+            DispatchQueue.main.async {
+                pickedImage = image
+            }
+        }
+    }
+
     /// Three input affordances: Photos library pick, fresh camera
-    /// capture, and paste-from-clipboard. The Photos picker is the
-    /// existing SwiftUI `PhotosPicker` wrapper; the camera button
-    /// presents a `UIImagePickerController` via `CameraPicker`;
-    /// paste pulls a UIImage out of `UIPasteboard.general` so the
-    /// "Copy and Delete" path on the iPad screenshot thumbnail
-    /// flows straight into a session.
+    /// capture, and a system `PasteButton`. The PasteButton replaces
+    /// the previous custom Button that called `UIPasteboard.general.image`
+    /// — that direct pasteboard read triggered the "Allow Paste"
+    /// prompt every time, which got intolerable for a screenshot-
+    /// heavy workflow. The system PasteButton bypasses that prompt
+    /// entirely; iOS treats its explicit tap as authorization.
     ///
     /// Camera is hidden on environments without a camera (Simulator).
     private var inputButtons: some View {
@@ -136,35 +161,8 @@ struct EmptyStateView: View {
                 }
             }
 
-            Button {
-                pasteFromClipboard()
-            } label: {
-                Label("Paste from clipboard", systemImage: "doc.on.clipboard")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-        }
-        .alert(
-            "No image in clipboard",
-            isPresented: $pasteFailed
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Take a screenshot, tap the corner thumbnail → Done → Copy and Delete, then come back and tap Paste again.")
-        }
-    }
-
-    /// Pull a UIImage out of the system pasteboard and feed it through
-    /// the same `pickedImage` binding the Photos / Camera paths use.
-    /// Triggers iOS's standard "ScreenshotTutor pasted from another
-    /// app" banner — that's the system-mandated banner for explicit
-    /// pasteboard reads, not anything we can suppress.
-    private func pasteFromClipboard() {
-        if let image = UIPasteboard.general.image {
-            pickedImage = image
-        } else {
-            pasteFailed = true
+            pasteControl
+                .frame(maxWidth: .infinity)
         }
     }
 
