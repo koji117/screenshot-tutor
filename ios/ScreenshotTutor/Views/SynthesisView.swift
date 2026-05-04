@@ -53,8 +53,7 @@ struct SynthesisView: View {
                     .foregroundStyle(.secondary)
 
                 if sourceSessions.count < 2 && !started {
-                    Text("You need at least 2 past summaries before a synthesis is meaningful.")
-                        .foregroundStyle(.secondary)
+                    notEnoughSourcesView
                 } else {
                     statusLine
                     if !streamingOutput.isEmpty {
@@ -101,6 +100,33 @@ struct SynthesisView: View {
     private struct ExportSheetItem: Identifiable {
         let id = UUID()
         let bundle: ExportBundle
+    }
+
+    /// "Couldn't synthesize yet" empty state. The mascot does the
+    /// heavy lifting — a friendly pondering pose with one short
+    /// sentence in its voice.
+    private var notEnoughSourcesView: some View {
+        HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .center, spacing: -2) {
+                Text(MascotState.pondering.primary)
+                    .font(.system(size: 44))
+                if let secondary = MascotState.pondering.secondary {
+                    Text(secondary)
+                        .font(.system(size: 26))
+                        .offset(x: -4, y: 6)
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("A couple more sessions first")
+                    .font(.headline)
+                Text("I need at least two summaries before I can pull themes across them.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .combine)
     }
 
     @ToolbarContentBuilder

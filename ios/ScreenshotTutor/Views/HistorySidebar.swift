@@ -61,9 +61,16 @@ struct HistorySidebar: View {
 
             Section("Past sessions") {
                 if store.sessions.isEmpty {
-                    Text("No sessions yet")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        Text(MascotState.empty.primary)
+                            .font(.title)
+                        Text("No screenshots yet")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("No screenshots yet")
                 } else {
                     ForEach(store.sessions) { session in
                         NavigationLink(value: AppRoute.session(session.id)) {

@@ -64,7 +64,7 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            heroCharacter
+            tappableHero
 
             // 640pt feels right across the iPad range — narrow
             // enough to read comfortably on iPad mini, wide enough
@@ -138,24 +138,48 @@ struct EmptyStateView: View {
 
     // MARK: - Hero
 
-    /// Unobtrusive mascot for the home screen — a monkey with a
-    /// camera, set as a single line of emoji so it adapts to
-    /// system text scaling without needing a custom asset. The
-    /// camera is rotated slightly and overlaps the monkey to read
-    /// as "monkey taking a picture" rather than two separate
-    /// glyphs side by side.
+    /// Tappable wrapper around the mascot. Tapping the home hero
+    /// opens the Photos picker — the most-likely first action on
+    /// a fresh screen. Selection haptic on tap, then PhotosPicker
+    /// drives the rest of the flow through the same `pickedImage`
+    /// binding the sibling button uses.
+    private var tappableHero: some View {
+        PhotosPicker(
+            selection: $photosItem,
+            matching: .any(of: [.screenshots, .images]),
+            photoLibrary: .shared()
+        ) {
+            heroCharacter
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                UISelectionFeedbackGenerator().selectionChanged()
+            }
+        )
+        .accessibilityHint("Pick a screenshot")
+    }
+
+    /// State-aware mascot — same monkey, different second glyph
+    /// per `runner.state`. Swaps without animation; the brand
+    /// voice is "calm, scholarly, patient" — no bouncing, no
+    /// blinking, just a quiet identity that signals what the app
+    /// is doing.
     private var heroCharacter: some View {
-        HStack(alignment: .center, spacing: -2) {
-            Text("🐵")
+        let glyph = MascotState.from(runner.state)
+        return HStack(alignment: .center, spacing: -2) {
+            Text(glyph.primary)
                 .font(.system(size: 64))
-            Text("📷")
-                .font(.system(size: 36))
-                .rotationEffect(.degrees(-12))
-                .offset(x: -6, y: 8)
+            if let secondary = glyph.secondary {
+                Text(secondary)
+                    .font(.system(size: 36))
+                    .rotationEffect(.degrees(-12))
+                    .offset(x: -6, y: 8)
+            }
         }
         .padding(.top, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Screenshot Tutor — a monkey taking a picture")
+        .accessibilityLabel(glyph.accessibilityLabel)
     }
 
     // MARK: - Banner
