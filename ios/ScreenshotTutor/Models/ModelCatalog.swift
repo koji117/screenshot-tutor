@@ -1,9 +1,14 @@
 // ModelCatalog.swift
 // The set of multimodal models we offer. These map to ready-made
 // `ModelConfiguration` presets in MLX-VLM's `VLMRegistry`, which
-// already point at the canonical mlx-community ONNX-style ports on
-// Hugging Face. Adding a new VLM = add another entry that picks a
+// already point at the canonical mlx-community ports on Hugging
+// Face. Adding a new VLM = add another entry that picks a
 // `VLMRegistry` constant.
+//
+// Scoped to Gemma 4 only — the app is a screenshot tutor for the
+// user's own study material, and the Gemma 4 family gives them
+// parity with the web version's model choice. Other VLM families
+// (Qwen, SmolVLM, PaliGemma) are intentionally omitted.
 
 import Foundation
 import MLXVLM
@@ -23,43 +28,22 @@ struct ModelEntry: Identifiable, Hashable {
 enum ModelCatalog {
     static let entries: [ModelEntry] = [
         ModelEntry(
-            label: "Qwen2-VL 2B (4-bit)",
-            configuration: VLMRegistry.qwen2VL2BInstruct4Bit,
-            approxSizeMB: 1500,
-            note: "Strong general VLM. Good first pick on any iPad."
-        ),
-        ModelEntry(
-            label: "SmolVLM (4-bit)",
-            configuration: VLMRegistry.smolvlminstruct4bit,
-            approxSizeMB: 1100,
-            note: "Smaller, faster. Lower quality on dense text."
-        ),
-        ModelEntry(
             label: "Gemma 4 E2B (4-bit)",
             configuration: VLMRegistry.gemma4_E2B_it_4bit,
             approxSizeMB: 1500,
-            note: "Native MLX port of the web app's e2b model. Strong reading."
+            note: "Smaller and faster. Fits any iPad comfortably."
         ),
         ModelEntry(
             label: "Gemma 4 E4B (4-bit)",
             configuration: VLMRegistry.gemma4_E4B_it_4bit,
             approxSizeMB: 3000,
-            note: "Best reading quality. Needs an iPad with enough RAM (Air / Pro / mini 7+)."
-        ),
-        ModelEntry(
-            label: "Qwen2.5-VL 3B (4-bit)",
-            configuration: VLMRegistry.qwen2_5VL3BInstruct4Bit,
-            approxSizeMB: 2200,
-            note: "Newer Qwen with stronger document understanding."
-        ),
-        ModelEntry(
-            label: "PaliGemma 3B (8-bit)",
-            configuration: VLMRegistry.paligemma3bMix448_8bit,
-            approxSizeMB: 3500,
-            note: "Document-tuned. Best for textbook pages and dense diagrams."
+            note: "Best reading quality. Needs the increased-memory entitlement and an iPad with enough RAM (Air / Pro / mini 7+)."
         ),
     ]
 
+    /// First-time default. E2B fits everywhere; users can opt up to
+    /// E4B from the picker once they've confirmed it loads on their
+    /// device.
     static let defaultID: String = entries[0].id
 
     static func entry(id: String) -> ModelEntry? {
