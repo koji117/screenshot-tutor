@@ -138,15 +138,16 @@ struct EmptyStateView: View {
     private func handlePaste(_ providers: [NSItemProvider]) {
         Task {
             for provider in providers {
-                guard let typeID = provider.registeredTypeIdentifiers.first(where: { id in
-                    guard let utType = UTType(id) else { return false }
-                    return utType.conforms(to: .image)
-                }) else { continue }
+                guard let utType = provider.registeredTypeIdentifiers
+                    .compactMap(UTType.init)
+                    .first(where: { $0.conforms(to: .image) })
+                else { continue }
 
                 do {
-                    let data = try await provider.loadDataRepresentation(
-                        forTypeIdentifier: typeID
-                    )
+                    // The async overload of loadDataRepresentation takes
+                    // a UTType (iOS 16+); the legacy completion-handler
+                    // form takes a String identifier.
+                    let data = try await provider.loadDataRepresentation(for: utType)
                     if let image = UIImage(data: data) {
                         await MainActor.run { pickedImage = image }
                         return
