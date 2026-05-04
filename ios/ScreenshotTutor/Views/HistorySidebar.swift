@@ -22,8 +22,22 @@ struct HistorySidebar: View {
     /// session it was about.
     @State private var pendingDelete: UUID?
 
+    /// `List(selection:)` on iOS requires an `Optional<SelectionValue>`
+    /// binding, but the parent owns `route` as a non-optional with
+    /// `.empty` as its default. Adapt by wrapping: present route as
+    /// optional to the List, and only write back when the user
+    /// actually picks a row (ignore the deselect case).
+    private var routeSelection: Binding<AppRoute?> {
+        Binding(
+            get: { route },
+            set: { newValue in
+                if let newValue { route = newValue }
+            }
+        )
+    }
+
     var body: some View {
-        List(selection: $route) {
+        List(selection: routeSelection) {
             Section {
                 NavigationLink(value: AppRoute.empty) {
                     Label("New session", systemImage: "plus.circle")
