@@ -33,15 +33,15 @@ struct EmptyStateView: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Screenshot Tutor")
-                .font(.largeTitle.weight(.semibold))
-
-            Text("Pick or capture an image. The model summarizes it on-device — nothing leaves your iPad.")
-                .font(.body)
+        VStack(spacing: 16) {
+            // Subtitle only — the navigation bar already shows
+            // "Screenshot Tutor" inline (navigationBarTitleDisplayMode
+            // .inline in ContentView), so a duplicate hero title here
+            // wastes vertical space without adding clarity.
+            Text("On-device summaries. Nothing leaves your iPad.")
+                .font(.callout)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
+                .frame(maxWidth: 480, alignment: .leading)
 
             // When the user just took a screenshot and routed it to
             // the clipboard (via Shortcut or "Copy and Delete"), this
@@ -86,57 +86,58 @@ struct EmptyStateView: View {
         ) { _ in refreshClipboardState() }
     }
 
-    /// Prominent banner shown when there's an image waiting in the
-    /// clipboard. The detection uses `UIPasteboard.general.hasImages`,
-    /// a metadata-only check that does not trigger the "Allow Paste"
+    /// Banner shown when there's an image waiting in the clipboard.
+    /// The detection uses `UIPasteboard.general.hasImages`, a
+    /// metadata-only check that does not trigger the "Allow Paste"
     /// prompt. The actual paste actions are system `PasteButton`s —
-    /// the iOS-vetted control that bypasses the prompt because Apple
-    /// treats an explicit tap on it as user authorization.
+    /// iOS treats an explicit tap on one as user authorization, so
+    /// the prompt is also skipped on the actual paste.
     ///
     /// Two buttons, one per paste mode: "crop" routes through the
     /// region selector (default for screenshots that have UI chrome
-    /// to trim), "full" commits the entire image as-is (right when
-    /// the screenshot is already exactly what the user wants).
+    /// to trim), "full" commits the entire image as-is (when the
+    /// screenshot is already exactly what the user wants).
+    ///
+    /// Visual treatment: an iOS notification-style tinted panel
+    /// rather than a full-bleed accent-color CTA. The user already
+    /// has the image in hand — this is a hint, not an alert.
     private var clipboardBanner: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Image(systemName: "doc.on.clipboard.fill")
-                    .font(.title2)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Image ready in clipboard")
-                        .font(.headline)
-                    Text("Choose how to bring it in")
-                        .font(.footnote)
-                        .opacity(0.85)
-                }
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                Text("Image ready in clipboard")
+                    .font(.headline)
                 Spacer()
             }
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 pasteAction(.crop, caption: "Crop a region")
                 pasteAction(.full, caption: "Use full image")
             }
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 16)
-        .background(Color.accentColor)
-        .foregroundColor(.white)
+        .padding(16)
+        .background(Color.accentColor.opacity(0.10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    /// One paste affordance: a system `PasteButton` next to a small
-    /// caption explaining the mode. The PasteButton itself always
-    /// reads "Paste" (its label is system-controlled), so the
-    /// caption is what disambiguates the two side-by-side buttons.
+    /// One paste affordance: a system `PasteButton` with a caption
+    /// stacked beneath it. The PasteButton's label is fixed to
+    /// "Paste" by iOS, so the caption is what tells the two
+    /// side-by-side buttons apart.
     @ViewBuilder
     private func pasteAction(_ mode: PasteMode, caption: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             PasteButton(supportedContentTypes: [UTType.image]) { providers in
                 handlePaste(providers, mode: mode)
             }
-            .tint(.white)
             Text(caption)
-                .font(.caption2)
-                .opacity(0.85)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -243,10 +244,11 @@ struct EmptyStateView: View {
             }
 
             // Two paste paths, each with a one-line caption that
-            // distinguishes them (the PasteButton's label is
-            // system-controlled and always reads "Paste").
-            pasteRow(.crop, caption: "Paste, then crop a region")
-            pasteRow(.full, caption: "Paste the full image as-is")
+            // distinguishes them. Caption phrasing matches the
+            // banner above so the choice reads the same in both
+            // places.
+            pasteRow(.crop, caption: "Crop a region")
+            pasteRow(.full, caption: "Use full image")
         }
     }
 
@@ -257,7 +259,7 @@ struct EmptyStateView: View {
                 handlePaste(providers, mode: mode)
             }
             Text(caption)
-                .font(.callout)
+                .font(.footnote)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
