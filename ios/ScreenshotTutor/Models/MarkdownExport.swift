@@ -335,6 +335,13 @@ enum MarkdownExport {
         )
     }
 
+    /// Unicode-aware slug. Keeps any letter (`\p{L}`) or digit
+    /// (`\p{N}`) — including CJK, Cyrillic, Greek, accented Latin —
+    /// and replaces every other run of characters with a single
+    /// hyphen. iOS / macOS / iCloud Drive / Obsidian all handle
+    /// Unicode filenames cleanly, so a Japanese synthesis becomes
+    /// `2026-05-04-1430-テーマ-機械学習-...md` instead of falling
+    /// back to the `-synthesis.md` placeholder.
     private static func slugify(_ source: String, maxWords: Int = 5, maxLen: Int = 50) -> String {
         if source.isEmpty { return "" }
         let stripped = source.replacingOccurrences(
@@ -346,7 +353,9 @@ enum MarkdownExport {
             .joined(separator: "-")
             .lowercased()
         let cleaned = words.replacingOccurrences(
-            of: "[^a-z0-9-]+", with: "-", options: .regularExpression
+            of: #"[^\p{L}\p{N}-]+"#,
+            with: "-",
+            options: .regularExpression
         )
         let collapsed = cleaned.replacingOccurrences(
             of: "-+", with: "-", options: .regularExpression
