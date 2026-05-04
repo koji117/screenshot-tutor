@@ -37,23 +37,50 @@ struct RegionSelectorView: View {
             cropArea
         }
         .background(Color.black.ignoresSafeArea())
+        .onAppear {
+            // The crop is gesture-only; VoiceOver users can't drag
+            // a rectangle, so auto-confirm the full image and skip
+            // this screen entirely. They can still review the
+            // captured image inside the resulting session view.
+            if UIAccessibility.isVoiceOverRunning {
+                onConfirm(image)
+            }
+        }
     }
 
     // MARK: - Toolbar
 
     @ViewBuilder
     private var toolbar: some View {
+        // GeometryReader-free width check via the horizontal size
+        // class — when we're in a narrow width (Slide Over, 320pt
+        // iPhone class), drop the hint text so the four buttons
+        // don't get squeezed or wrap.
+        ViewThatFits(in: .horizontal) {
+            toolbarContent(showHint: true)
+            toolbarContent(showHint: false)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.black.opacity(0.95))
+    }
+
+    @ViewBuilder
+    private func toolbarContent(showHint: Bool) -> some View {
         HStack {
             Button("Cancel", role: .cancel) { onCancel() }
                 .foregroundStyle(.white)
 
             Spacer()
 
-            Text(hintText)
-                .font(.footnote)
-                .foregroundStyle(.white.opacity(0.7))
-
-            Spacer()
+            if showHint {
+                Text(hintText)
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+                    .layoutPriority(0)
+                Spacer()
+            }
 
             Button("Use full image") {
                 onConfirm(image)
@@ -68,9 +95,6 @@ struct RegionSelectorView: View {
             .buttonStyle(.borderedProminent)
             .disabled(!hasUsableSelection)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color.black.opacity(0.95))
     }
 
     // MARK: - Crop area

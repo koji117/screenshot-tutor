@@ -4,7 +4,6 @@
 // multi-minute weight download.
 //
 // Layout (top to bottom):
-//   • Subtitle hint.
 //   • Clipboard banner (only when an image is detected). Pure
 //     signal — points the user at the input row's paste rows,
 //     carries no buttons of its own.
@@ -62,21 +61,20 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("On-device summaries. Nothing leaves your iPad.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 480, alignment: .leading)
-
+            // 640pt feels right across the iPad range — narrow
+            // enough to read comfortably on iPad mini, wide enough
+            // not to look like a phone-content island on a 13"
+            // iPad Pro in landscape.
             if clipboardHasImage {
                 clipboardBanner
-                    .frame(maxWidth: 480)
+                    .frame(maxWidth: 640)
             }
 
             inputButtons
-                .frame(maxWidth: 480)
+                .frame(maxWidth: 640)
 
             modelPanel
-                .frame(maxWidth: 480)
+                .frame(maxWidth: 640)
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker(image: $pickedImage)
@@ -473,6 +471,8 @@ struct EmptyStateView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Model ready")
         case .loading(let p):
             VStack(alignment: .leading, spacing: 4) {
                 Text("Loading… \(Int(p * 100))%")
@@ -480,6 +480,10 @@ struct EmptyStateView: View {
                     .foregroundStyle(.secondary)
                 ProgressView(value: p)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Loading model")
+            .accessibilityValue("\(Int(p * 100)) percent")
+            .accessibilityAddTraits(.updatesFrequently)
         case .failed(let msg):
             HStack(spacing: 8) {
                 Label(msg, systemImage: "exclamationmark.triangle")
@@ -514,17 +518,20 @@ struct EmptyStateView: View {
         diskSizeBytes = runner.diskSize(forID: id)
     }
 
+    /// Both helpers route through `ByteCountFormatter` so the size
+    /// format stays consistent across the panel — "On disk: 1.5 GB"
+    /// uses the same locale-aware rounding as "Gemma 4 E2B (4-bit) ·
+    /// 1.5 GB" in the picker. `formatSize` takes the catalog's
+    /// approximate-MB value; `formatBytes` takes a real on-disk byte
+    /// count from the runner.
     private func formatSize(_ mb: Int) -> String {
-        if mb >= 1000 {
-            let gb = Double(mb) / 1000
-            return String(format: gb.truncatingRemainder(dividingBy: 1) == 0 ? "%.0fGB" : "%.1fGB", gb)
-        }
-        return "\(mb)MB"
+        formatBytes(Int64(mb) * 1_000_000)
     }
 
     private func formatBytes(_ bytes: Int64) -> String {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
+        formatter.allowedUnits = [.useMB, .useGB]
         return formatter.string(fromByteCount: bytes)
     }
 }

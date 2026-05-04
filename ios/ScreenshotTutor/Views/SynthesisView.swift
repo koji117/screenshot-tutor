@@ -223,6 +223,10 @@ struct SynthesisView: View {
                 ProgressView(value: p)
             }
             .frame(height: 36, alignment: .center)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Loading model")
+            .accessibilityValue("\(Int(p * 100)) percent")
+            .accessibilityAddTraits(.updatesFrequently)
         case .generating:
             HStack(spacing: 8) {
                 ProgressView()
@@ -230,6 +234,9 @@ struct SynthesisView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Reading your past sessions")
+            .accessibilityAddTraits(.updatesFrequently)
         case .failed(let msg):
             HStack(spacing: 10) {
                 Label(msg, systemImage: "exclamationmark.triangle")

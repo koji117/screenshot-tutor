@@ -343,6 +343,11 @@ struct SessionView: View {
     /// left-aligned. Each bubble is capped at 600pt so on iPad the
     /// user-side bubble doesn't stretch into a full-width accent
     /// bar — bubbles should read as bubbles.
+    ///
+    /// Accessibility: alignment + tint don't translate to VoiceOver,
+    /// so the bubble combines its children into a single element
+    /// labeled with the speaker ("Your message" / "Tutor's reply"),
+    /// with the message text as the accessibility value.
     @ViewBuilder
     private func chatBubble(role: ChatRole, text: String) -> some View {
         HStack {
@@ -360,6 +365,9 @@ struct SessionView: View {
                     : Color(.secondarySystemBackground)
             )
             .clipShape(RoundedRectangle(cornerRadius: 14))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(role == .user ? "Your message" : "Tutor's reply")
+            .accessibilityValue(text)
 
             if role == .assistant { Spacer(minLength: 32) }
         }
@@ -368,14 +376,21 @@ struct SessionView: View {
     /// Pinned at the bottom via `.safeAreaInset(edge: .bottom)`. Has
     /// its own translucent material background so content peeks
     /// through on scroll without making the input unreadable.
+    ///
+    /// `axis: .vertical` lets longer questions wrap up to 4 lines.
+    /// Trade-off: Return inserts a newline (SwiftUI behavior on
+    /// vertical-axis text fields), so submit is via the Send button
+    /// or ⌘Return on a hardware keyboard. We don't set
+    /// `submitLabel(.send)` because it would be misleading — that
+    /// label only matters when Return actually submits, which it
+    /// doesn't here.
     private var chatComposer: some View {
         HStack(spacing: 10) {
             TextField("Ask a follow-up about this screenshot…", text: $chatInput, axis: .vertical)
                 .lineLimit(1 ... 4)
                 .textFieldStyle(.roundedBorder)
-                .submitLabel(.send)
-                .onSubmit(submitChat)
                 .disabled(isBusy && streamingChatMessageID == nil)
+                .accessibilityHint("Use Command-Return to send")
             Button {
                 submitChat()
             } label: {
@@ -408,6 +423,10 @@ struct SessionView: View {
                 ProgressView(value: p)
             }
             .frame(height: 36, alignment: .center)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Loading model")
+            .accessibilityValue("\(Int(p * 100)) percent")
+            .accessibilityAddTraits(.updatesFrequently)
         case .generating:
             HStack(spacing: 8) {
                 ProgressView()
@@ -415,6 +434,9 @@ struct SessionView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Thinking")
+            .accessibilityAddTraits(.updatesFrequently)
         case .failed(let msg):
             HStack(spacing: 10) {
                 Label(msg, systemImage: "exclamationmark.triangle")
