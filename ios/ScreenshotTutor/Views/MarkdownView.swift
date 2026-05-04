@@ -205,6 +205,12 @@ struct MarkdownView: View {
     /// closing `$` arrives. Inline math may not span newlines, which
     /// avoids accidentally swallowing two unrelated `$` signs across
     /// a paragraph break.
+    ///
+    /// After splitting, simple inline math (Greek letters + common
+    /// operators) is collapsed back into Unicode text so it flows
+    /// inline within bullets / bold / paragraphs instead of breaking
+    /// the block into a vertical stack. SwiftMath still owns the
+    /// genuinely complex math (\\frac, ^{}, _{}, etc.).
     private func extractMathRuns(from block: String) -> [MathRun] {
         var runs: [MathRun] = []
         var pending = ""
@@ -252,7 +258,104 @@ struct MarkdownView: View {
             i = block.index(after: i)
         }
         flushPending()
-        return runs
+
+        return Self.foldSimpleInlineMath(runs)
+    }
+
+    /// Map of common LaTeX commands to their Unicode equivalents.
+    /// Greek letters cover the lion's share of inline math in study
+    /// summaries (`\\mu`, `\\sigma`, `\\alpha`, ...); the operators
+    /// catch ±, ≤, ≥, ≠, ∑, ∫, → and friends.
+    private static let latexUnicodeMap: [String: String] = [
+        // Lowercase Greek
+        "\\alpha": "α", "\\beta": "β", "\\gamma": "γ", "\\delta": "δ",
+        "\\epsilon": "ε", "\\varepsilon": "ε", "\\zeta": "ζ", "\\eta": "η",
+        "\\theta": "θ", "\\vartheta": "ϑ", "\\iota": "ι", "\\kappa": "κ",
+        "\\lambda": "λ", "\\mu": "μ", "\\nu": "ν", "\\xi": "ξ",
+        "\\omicron": "ο", "\\pi": "π", "\\varpi": "ϖ", "\\rho": "ρ",
+        "\\varrho": "ϱ", "\\sigma": "σ", "\\varsigma": "ς", "\\tau": "τ",
+        "\\upsilon": "υ", "\\phi": "φ", "\\varphi": "φ", "\\chi": "χ",
+        "\\psi": "ψ", "\\omega": "ω",
+        // Uppercase Greek
+        "\\Gamma": "Γ", "\\Delta": "Δ", "\\Theta": "Θ", "\\Lambda": "Λ",
+        "\\Xi": "Ξ", "\\Pi": "Π", "\\Sigma": "Σ", "\\Upsilon": "Υ",
+        "\\Phi": "Φ", "\\Psi": "Ψ", "\\Omega": "Ω",
+        // Relations
+        "\\le": "≤", "\\leq": "≤", "\\ge": "≥", "\\geq": "≥",
+        "\\ne": "≠", "\\neq": "≠", "\\approx": "≈", "\\equiv": "≡",
+        "\\sim": "∼", "\\simeq": "≃", "\\propto": "∝",
+        // Arithmetic / logic
+        "\\pm": "±", "\\mp": "∓", "\\times": "×", "\\div": "÷",
+        "\\cdot": "·", "\\ast": "∗", "\\star": "⋆",
+        // Set / logic
+        "\\in": "∈", "\\notin": "∉", "\\subset": "⊂", "\\supset": "⊃",
+        "\\cup": "∪", "\\cap": "∩", "\\emptyset": "∅", "\\varnothing": "∅",
+        "\\forall": "∀", "\\exists": "∃", "\\neg": "¬",
+        // Big operators (inline form — display form goes via SwiftMath)
+        "\\sum": "∑", "\\prod": "∏", "\\int": "∫", "\\oint": "∮",
+        // Calculus / arrows
+        "\\partial": "∂", "\\nabla": "∇", "\\infty": "∞",
+        "\\to": "→", "\\rightarrow": "→", "\\leftarrow": "←",
+        "\\Rightarrow": "⇒", "\\Leftarrow": "⇐",
+        "\\leftrightarrow": "↔", "\\Leftrightarrow": "⇔",
+        "\\mapsto": "↦",
+        // Misc
+        "\\sqrt": "√", "\\degree": "°", "\\dots": "…", "\\ldots": "…",
+        "\\cdots": "⋯", "\\circ": "∘", "\\bullet": "•",
+        // Spacing — drop entirely so `\,` and friends don't leak through
+        "\\,": "", "\\:": "", "\\;": "", "\\!": "", "\\ ": " ",
+        // Text-mode helpers the model occasionally emits
+        "\\text": "", "\\mathrm": "", "\\mathbf": "", "\\mathit": "",
+    ]
+
+    /// Try to express a piece of LaTeX as plain Unicode. Returns nil
+    /// for anything still containing markup (`\\frac`, `^`, `_`,
+    /// braces, leftover `\\`-commands) — those need real math
+    /// rendering via SwiftMath.
+    private static func tryUnicodeMath(_ latex: String) -> String? {
+        let trimmed = latex.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Replace longest commands first so `\sigma` can't be partially
+        // clobbered by a hypothetical shorter prefix (defensive — the
+        // current map has no overlapping prefixes, but cheap insurance).
+        var result = trimmed
+        for (cmd, uni) in latexUnicodeMap.sorted(by: { $0.key.count > $1.key.count }) {
+            result = result.replacingOccurrences(of: cmd, with: uni)
+        }
+
+        // If markup remains, this is real math — let SwiftMath handle it.
+        let problematic: Set<Character> = ["\\", "{", "}", "^", "_"]
+        if result.contains(where: { problematic.contains($0) }) {
+            return nil
+        }
+        return result
+    }
+
+    /// Replace each `.math(_, display: false)` whose LaTeX is
+    /// expressible in Unicode with a `.text` run, then merge adjacent
+    /// `.text` runs back together. Result: simple inline math becomes
+    /// part of the surrounding text and the block keeps its original
+    /// shape (bullet, bold, paragraph). Block math (`$$...$$`) is
+    /// untouched and still rendered via SwiftMath.
+    private static func foldSimpleInlineMath(_ runs: [MathRun]) -> [MathRun] {
+        let folded: [MathRun] = runs.map { run in
+            if case .math(let latex, false) = run,
+               let unicode = tryUnicodeMath(latex) {
+                return .text(unicode)
+            }
+            return run
+        }
+        var merged: [MathRun] = []
+        for run in folded {
+            if case .text(let cur) = run,
+               case .text(let prev) = merged.last {
+                merged[merged.count - 1] = .text(prev + cur)
+            } else {
+                merged.append(run)
+            }
+        }
+        return merged
     }
 
     @ViewBuilder
