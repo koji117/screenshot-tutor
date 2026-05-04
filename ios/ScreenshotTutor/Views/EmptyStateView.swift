@@ -4,6 +4,9 @@
 // multi-minute weight download.
 //
 // Layout (top to bottom):
+//   • Hero character — a monkey with a camera. Visual identity
+//     for the home screen; replaces the marketing-tone subtitle
+//     that used to live here.
 //   • Clipboard banner (only when an image is detected). Pure
 //     signal — points the user at the input row's paste rows,
 //     carries no buttons of its own.
@@ -61,6 +64,8 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            heroCharacter
+
             // 640pt feels right across the iPad range — narrow
             // enough to read comfortably on iPad mini, wide enough
             // not to look like a phone-content island on a 13"
@@ -129,6 +134,28 @@ struct EmptyStateView: View {
                 for: UIApplication.didBecomeActiveNotification
             )
         ) { _ in refreshClipboardState() }
+    }
+
+    // MARK: - Hero
+
+    /// Unobtrusive mascot for the home screen — a monkey with a
+    /// camera, set as a single line of emoji so it adapts to
+    /// system text scaling without needing a custom asset. The
+    /// camera is rotated slightly and overlaps the monkey to read
+    /// as "monkey taking a picture" rather than two separate
+    /// glyphs side by side.
+    private var heroCharacter: some View {
+        HStack(alignment: .center, spacing: -2) {
+            Text("🐵")
+                .font(.system(size: 64))
+            Text("📷")
+                .font(.system(size: 36))
+                .rotationEffect(.degrees(-12))
+                .offset(x: -6, y: 8)
+        }
+        .padding(.top, 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Screenshot Tutor — a monkey taking a picture")
     }
 
     // MARK: - Banner
