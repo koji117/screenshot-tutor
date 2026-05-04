@@ -117,6 +117,7 @@ struct ContentView: View {
             } label: {
                 Label("History", systemImage: "clock.arrow.circlepath")
             }
+            .keyboardShortcut("h", modifiers: .command)
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button {
@@ -124,6 +125,7 @@ struct ContentView: View {
             } label: {
                 Label("Settings", systemImage: "gearshape")
             }
+            .keyboardShortcut(",", modifiers: .command)
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button {
@@ -132,6 +134,7 @@ struct ContentView: View {
             } label: {
                 Label("New", systemImage: "plus")
             }
+            .keyboardShortcut("n", modifiers: .command)
         }
     }
 }

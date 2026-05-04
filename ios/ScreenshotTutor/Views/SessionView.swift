@@ -187,6 +187,7 @@ struct SessionView: View {
         } label: {
             Label("Export to Obsidian", systemImage: "square.and.arrow.down")
         }
+        .keyboardShortcut("e", modifiers: .command)
     }
 
     // MARK: - Sections
@@ -223,6 +224,16 @@ struct SessionView: View {
         let hasText = !displayed.isEmpty
         let hasPersistedSummary = !s.summary.isEmpty
 
+        // Regenerating: model is busy on a summary op AND we have a
+        // persisted summary AND no streaming chunks have arrived yet.
+        // While true, dim the existing content so the user sees the
+        // moment of replacement explicitly. Once chunks start, the
+        // streaming text takes over and the dim lifts.
+        let isRegenerating = isBusy
+            && streamingSummary.isEmpty
+            && hasPersistedSummary
+            && (lastOp.map { if case .summarize = $0 { return true } else { return false } } ?? false)
+
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Summary").font(.title2.weight(.semibold))
@@ -244,6 +255,8 @@ struct SessionView: View {
             statusLine
             if hasText {
                 MarkdownView(text: displayed)
+                    .opacity(isRegenerating ? 0.35 : 1)
+                    .animation(.easeInOut(duration: 0.2), value: isRegenerating)
             }
         }
     }
@@ -253,6 +266,13 @@ struct SessionView: View {
         let hasSummary = !s.summary.isEmpty || !streamingSummary.isEmpty
         let hasPersistedBreakdown = s.breakdown != nil
         let hasBreakdownText = hasPersistedBreakdown || !streamingBreakdown.isEmpty
+
+        // Same regeneration logic as summary — dim old content while
+        // the new generation is in flight but no chunks have landed.
+        let isRegenerating = isBusy
+            && streamingBreakdown.isEmpty
+            && hasPersistedBreakdown
+            && (lastOp.map { if case .breakdown = $0 { return true } else { return false } } ?? false)
 
         if hasSummary {
             if hasBreakdownText {
@@ -282,6 +302,8 @@ struct SessionView: View {
                     }
                     if !displayed.isEmpty {
                         MarkdownView(text: displayed)
+                            .opacity(isRegenerating ? 0.35 : 1)
+                            .animation(.easeInOut(duration: 0.2), value: isRegenerating)
                     }
                 }
             } else {
@@ -318,8 +340,9 @@ struct SessionView: View {
 
     /// iMessage-inspired bubbles: user turns are accent-tinted and
     /// right-aligned, assistant turns are surface-tinted and
-    /// left-aligned. The role label was the only differentiator
-    /// before — alignment + tint is much more legible at a glance.
+    /// left-aligned. Each bubble is capped at 600pt so on iPad the
+    /// user-side bubble doesn't stretch into a full-width accent
+    /// bar — bubbles should read as bubbles.
     @ViewBuilder
     private func chatBubble(role: ChatRole, text: String) -> some View {
         HStack {
@@ -330,6 +353,7 @@ struct SessionView: View {
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 14)
+            .frame(maxWidth: 600, alignment: .leading)
             .background(
                 role == .user
                     ? Color.accentColor.opacity(0.12)
@@ -363,6 +387,7 @@ struct SessionView: View {
                 || chatInput.trimmingCharacters(in: .whitespaces).isEmpty
                 || session?.summary.isEmpty == true
             )
+            .keyboardShortcut(.return, modifiers: .command)
             .accessibilityLabel("Send follow-up")
         }
         .padding(.horizontal, 16)

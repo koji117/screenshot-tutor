@@ -126,6 +126,7 @@ struct SynthesisView: View {
         } label: {
             Label("Export to Obsidian", systemImage: "square.and.arrow.down")
         }
+        .keyboardShortcut("e", modifiers: .command)
     }
 
     /// Collapsible list of which sessions the synthesis drew from.
@@ -142,11 +143,36 @@ struct SynthesisView: View {
         } label: {
             HStack {
                 Image(systemName: "list.bullet.rectangle")
-                Text("Sources · \(sourceSessions.count)")
+                Text(sourcesLabel)
                     .font(.callout.weight(.medium))
             }
             .foregroundStyle(.secondary)
         }
+    }
+
+    /// Sources label includes the date range so the user can see at
+    /// a glance which week / period the synthesis spans, e.g.
+    /// "Sources · Apr 28 – May 3 · 5 sessions".
+    private var sourcesLabel: String {
+        let count = sourceSessions.count
+        let plural = count == 1 ? "session" : "sessions"
+        guard let range = formattedSourceDateRange else {
+            return "Sources · \(count) \(plural)"
+        }
+        return "Sources · \(range) · \(count) \(plural)"
+    }
+
+    /// Render the earliest → latest source createdAt as either a
+    /// single date (when all sources share a day) or a "Apr 28 –
+    /// May 3" range. Locale-aware via `setLocalizedDateFormatFromTemplate`.
+    private var formattedSourceDateRange: String? {
+        let dates = sourceSessions.map(\.createdAt)
+        guard let earliest = dates.min(), let latest = dates.max() else { return nil }
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMMd")
+        let from = f.string(from: earliest)
+        let to = f.string(from: latest)
+        return from == to ? from : "\(from) – \(to)"
     }
 
     @ViewBuilder

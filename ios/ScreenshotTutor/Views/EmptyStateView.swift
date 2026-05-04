@@ -46,6 +46,10 @@ struct EmptyStateView: View {
     /// picker's button style and label match the other input rows.
     @State private var photosItem: PhotosPickerItem?
 
+    /// Tracks whether a drag-and-drop hover is currently over the
+    /// view, used to tint the background while a drop is possible.
+    @State private var isDropTargeted: Bool = false
+
     /// Two paths a paste can take. `crop` routes the image through
     /// the region selector (the existing default flow); `full` skips
     /// the selector and commits the whole image as a session.
@@ -77,6 +81,22 @@ struct EmptyStateView: View {
                 .ignoresSafeArea()
         }
         .padding()
+        // System-level drag-and-drop. Drop an image from Files,
+        // Safari, Photos, etc. and we route it through the same
+        // path as Photos / Camera (respects settings.imageMode for
+        // crop vs full).
+        .onDrop(
+            of: [.image, .png, .jpeg, .heic],
+            isTargeted: $isDropTargeted,
+            perform: handleDrop
+        )
+        .background(
+            // Subtle accent tint while a drag hovers, so the user
+            // can see the empty state will accept the drop.
+            Color.accentColor.opacity(isDropTargeted ? 0.08 : 0)
+                .ignoresSafeArea()
+                .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
+        )
         .onAppear {
             refreshDiskState()
             refreshClipboardState()
@@ -163,7 +183,15 @@ struct EmptyStateView: View {
     /// and two disabled "Paste" buttons whenever it didn't.
     private var inputButtons: some View {
         HStack(spacing: 12) {
-            PhotosPicker(selection: $photosItem, matching: .images, photoLibrary: .shared()) {
+            // Pre-filter to screenshots first, falling back to any
+            // image. The Photos app's Screenshots album is where
+            // almost every pick will come from in this app, so
+            // landing the user there saves a tap.
+            PhotosPicker(
+                selection: $photosItem,
+                matching: .any(of: [.screenshots, .images]),
+                photoLibrary: .shared()
+            ) {
                 Label("Pick a screenshot", systemImage: "photo.on.rectangle")
                     .frame(maxWidth: .infinity)
             }
@@ -244,6 +272,36 @@ struct EmptyStateView: View {
 
     private func refreshClipboardState() {
         clipboardHasImage = UIPasteboard.general.hasImages
+    }
+
+    // MARK: - Drag-and-drop
+
+    /// `onDrop` handler. Walks the dropped providers, decodes the
+    /// first image-typed payload, and feeds it through `pickedImage`
+    /// — ContentView's `onChange` then routes to the region selector
+    /// or directly to a session per the user's `imageMode` setting.
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        Task {
+            for provider in providers {
+                guard let utType = provider.registeredTypeIdentifiers
+                    .compactMap(UTType.init)
+                    .first(where: { $0.conforms(to: .image) })
+                else { continue }
+                do {
+                    let data = try await loadData(from: provider, type: utType)
+                    if let image = UIImage(data: data) {
+                        await MainActor.run {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            pickedImage = image
+                        }
+                        return
+                    }
+                } catch {
+                    continue
+                }
+            }
+        }
+        return true
     }
 
     // MARK: - Model panel
