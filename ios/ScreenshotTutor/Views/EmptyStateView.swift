@@ -144,17 +144,38 @@ struct EmptyStateView: View {
                 else { continue }
 
                 do {
-                    // The async overload of loadDataRepresentation takes
-                    // a UTType (iOS 16+); the legacy completion-handler
-                    // form takes a String identifier.
-                    let data = try await provider.loadDataRepresentation(for: utType)
+                    // NSItemProvider only exposes the completion-handler
+                    // form of loadDataRepresentation publicly; wrap it in
+                    // a continuation so we can `await` inside the Task
+                    // and keep PasteButton's authorization window open
+                    // for the duration of the call.
+                    let data = try await loadData(from: provider, type: utType)
                     if let image = UIImage(data: data) {
                         await MainActor.run { pickedImage = image }
                         return
                     }
                 } catch {
-                    // Try the next provider; nothing usable on this one.
                     continue
+                }
+            }
+        }
+    }
+
+    private func loadData(from provider: NSItemProvider, type: UTType) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let data {
+                    continuation.resume(returning: data)
+                } else {
+                    continuation.resume(
+                        throwing: NSError(
+                            domain: "ScreenshotTutorPaste",
+                            code: -1,
+                            userInfo: [NSLocalizedDescriptionKey: "Pasteboard returned no data"]
+                        )
+                    )
                 }
             }
         }
