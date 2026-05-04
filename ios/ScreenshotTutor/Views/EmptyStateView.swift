@@ -104,10 +104,20 @@ struct EmptyStateView: View {
         )
         .onAppear {
             refreshDiskState()
-            refreshClipboardState()
             // First impression: panel open if there's setup to do,
             // collapsed if the model is already ready.
             modelPanelExpanded = !isReadyState
+        }
+        .task {
+            // Defer the pasteboard read by one async tick. Reading
+            // UIPasteboard.general directly inside onAppear during
+            // a cold launch logs benign-but-noisy PBErrorDomain
+            // errors ("pasteboard is not available at this time" /
+            // "name is not valid") because UIKit's pasteboard
+            // daemon isn't ready yet. By the time .task body runs
+            // (after the view is on screen) the service is up.
+            try? await Task.sleep(for: .milliseconds(150))
+            refreshClipboardState()
         }
         .onChange(of: runner.selectedModelID) { _, _ in
             refreshDiskState()
