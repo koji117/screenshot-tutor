@@ -155,50 +155,32 @@ struct EmptyStateView: View {
 
     // MARK: - Input row
 
-    /// Four input affordances, all rendered at the same visual
-    /// weight so the user sees the input methods as peers. The
-    /// banner above is the only prominent element when present.
+    /// Two always-available input affordances: Photos library pick
+    /// and Camera. Paste actions live exclusively in the clipboard
+    /// banner above and only appear when there's actually an image
+    /// to paste — duplicating them here would mean four "Paste"
+    /// buttons on screen at once whenever the clipboard had content,
+    /// and two disabled "Paste" buttons whenever it didn't.
     private var inputButtons: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                PhotosPicker(selection: $photosItem, matching: .images, photoLibrary: .shared()) {
-                    Label("Pick a screenshot", systemImage: "photo.on.rectangle")
+        HStack(spacing: 12) {
+            PhotosPicker(selection: $photosItem, matching: .images, photoLibrary: .shared()) {
+                Label("Pick a screenshot", systemImage: "photo.on.rectangle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+
+            if CameraPicker.isAvailable {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    showCamera = true
+                } label: {
+                    Label("Take a photo", systemImage: "camera")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
-
-                if CameraPicker.isAvailable {
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        showCamera = true
-                    } label: {
-                        Label("Take a photo", systemImage: "camera")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                }
             }
-
-            // Two paste paths, each with a one-line caption that
-            // distinguishes them. Caption phrasing matches the
-            // banner above.
-            pasteRow(.crop, caption: "Crop a region")
-            pasteRow(.full, caption: "Use full image")
-        }
-    }
-
-    @ViewBuilder
-    private func pasteRow(_ mode: PasteMode, caption: String) -> some View {
-        HStack(spacing: 12) {
-            PasteButton(supportedContentTypes: [UTType.image]) { providers in
-                handlePaste(providers, mode: mode)
-            }
-            Text(caption)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
         }
     }
 
