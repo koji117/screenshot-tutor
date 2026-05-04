@@ -6,9 +6,11 @@
 //
 // Mirrors the web app's `js/components/synthesis.js`. After a
 // successful synthesis the user can optionally "archive" past
-// sessions (clear them from the list).
+// sessions (clear them from the list) — this is gated behind a
+// `confirmationDialog` because it's destructive and irreversible.
 
 import SwiftUI
+import UIKit
 import MLXLMCommon
 
 struct SynthesisView: View {
@@ -30,23 +32,27 @@ struct SynthesisView: View {
     /// file copy, so we freeze the bundle when the user taps export.
     @State private var pendingExport: ExportBundle?
 
-    private var summaries: [String] {
-        store.sessions.compactMap { s in
-            let trimmed = s.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        }
-    }
+    /// Drives the "Archive past sessions?" confirmation.
+    @State private var showArchiveConfirm: Bool = false
+
+    /// Drives the collapsible "Sources" disclosure.
+    @State private var sourcesExpanded: Bool = false
+
+    /// Snapshot of which sessions fed the synthesis. Captured once
+    /// when generation starts so the source list stays stable even
+    /// if the user adds new sessions while reading the synthesis.
+    @State private var sourceSessions: [Session] = []
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("What you have been studying")
                     .font(.title.weight(.semibold))
-                Text("Across \(summaries.count) sessions")
+                Text("Across \(sourceSessions.count) sessions")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                if summaries.count < 2 {
+                if sourceSessions.count < 2 && !started {
                     Text("You need at least 2 past summaries before a synthesis is meaningful.")
                         .foregroundStyle(.secondary)
                 } else {
@@ -55,20 +61,8 @@ struct SynthesisView: View {
                         MarkdownView(text: streamingOutput)
                     }
                     if didSucceed {
-                        HStack(spacing: 12) {
-                            exportButton
-                            Button(role: .destructive) {
-                                store.clearAll()
-                                onAfterClear()
-                            } label: {
-                                Label("Archive past sessions", systemImage: "tray.and.arrow.down")
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-                    if case .generating = runner.state {
-                        Button("Cancel", role: .destructive) { cancel() }
-                            .buttonStyle(.bordered)
+                        sourcesDisclosure
+                        actionsRow
                     }
                 }
             }
@@ -76,6 +70,7 @@ struct SynthesisView: View {
         }
         .onAppear { startSynthesisIfNeeded() }
         .onDisappear { generationTask?.cancel() }
+        .toolbar { toolbarContent }
         .sheet(item: Binding(
             get: { pendingExport.map { ExportSheetItem(bundle: $0) } },
             set: { pendingExport = $0?.bundle }
@@ -84,6 +79,20 @@ struct SynthesisView: View {
                 pendingExport = nil
             }
             .ignoresSafeArea()
+        }
+        .confirmationDialog(
+            "Archive these \(sourceSessions.count) sessions?",
+            isPresented: $showArchiveConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Archive sessions", role: .destructive) {
+                store.clearAll()
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                onAfterClear()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The synthesis stays open, but the source sessions are removed from your history. This cannot be undone — export the synthesis first if you want to keep it.")
         }
     }
 
@@ -94,15 +103,100 @@ struct SynthesisView: View {
         let bundle: ExportBundle
     }
 
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            if case .generating = runner.state {
+                Button(role: .destructive) { cancel() } label: {
+                    Label("Cancel", systemImage: "xmark.circle")
+                }
+            } else if didSucceed, !streamingOutput.isEmpty {
+                exportToolbarButton
+            }
+        }
+    }
+
+    private var exportToolbarButton: some View {
+        Button {
+            pendingExport = try? MarkdownExport.stageSynthesis(
+                text: streamingOutput,
+                sessions: sourceSessions,
+                imageURL: { store.imageURL(for: $0) }
+            )
+        } label: {
+            Label("Export to Obsidian", systemImage: "square.and.arrow.down")
+        }
+    }
+
+    /// Collapsible list of which sessions the synthesis drew from.
+    /// Closed by default — the synthesis prose is the focus; the
+    /// sources are a way to verify or revisit, not the main read.
+    private var sourcesDisclosure: some View {
+        DisclosureGroup(isExpanded: $sourcesExpanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(sourceSessions) { s in
+                    sourceRow(s)
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack {
+                Image(systemName: "list.bullet.rectangle")
+                Text("Sources · \(sourceSessions.count)")
+                    .font(.callout.weight(.medium))
+            }
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func sourceRow(_ s: Session) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            if let ui = UIImage(contentsOfFile: store.thumbURL(for: s).path) {
+                Image(uiImage: ui)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(.tertiarySystemBackground))
+                    .frame(width: 44, height: 44)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(formattedDate(s.createdAt))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(previewText(s.summary))
+                    .font(.footnote)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    private var actionsRow: some View {
+        HStack(spacing: 12) {
+            Button(role: .destructive) {
+                showArchiveConfirm = true
+            } label: {
+                Label("Archive past sessions", systemImage: "tray.and.arrow.down")
+            }
+            .buttonStyle(.bordered)
+            Spacer()
+        }
+    }
+
     @ViewBuilder
     private var statusLine: some View {
         switch runner.state {
         case .loading(let p):
-            ProgressView(value: p) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Loading model… \(Int(p * 100))%")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                ProgressView(value: p)
             }
+            .frame(height: 36, alignment: .center)
         case .generating:
             HStack(spacing: 8) {
                 ProgressView()
@@ -111,19 +205,39 @@ struct SynthesisView: View {
                     .foregroundStyle(.secondary)
             }
         case .failed(let msg):
-            Text(msg)
-                .font(.subheadline)
-                .foregroundStyle(.red)
+            HStack(spacing: 10) {
+                Label(msg, systemImage: "exclamationmark.triangle")
+                    .font(.subheadline)
+                    .foregroundStyle(.red)
+                Spacer()
+                Button {
+                    started = false
+                    startSynthesisIfNeeded()
+                } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
         default:
             EmptyView()
         }
     }
 
     private func startSynthesisIfNeeded() {
-        guard !started, summaries.count >= 2 else { return }
+        guard !started else { return }
+        let usable = store.sessions.filter {
+            !$0.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard usable.count >= 2 else {
+            sourceSessions = usable
+            return
+        }
         started = true
+        sourceSessions = usable
+        let summaries = usable.map { $0.summary }
+
         let lang = settings.lang
-        let snapshot = summaries
         streamingOutput = ""
         didSucceed = false
 
@@ -131,7 +245,7 @@ struct SynthesisView: View {
             await runner.loadModel()
             guard case .ready = runner.state else { return }
             let chat: [Chat.Message] = [
-                .user(Prompts.synthesize(lang: lang, summaries: snapshot))
+                .user(Prompts.synthesize(lang: lang, summaries: summaries))
             ]
             let stream = runner.generate(chat: chat, maxTokens: 600)
             do {
@@ -139,7 +253,10 @@ struct SynthesisView: View {
                     if Task.isCancelled { break }
                     streamingOutput += chunk
                 }
-                if !Task.isCancelled { didSucceed = true }
+                if !Task.isCancelled {
+                    didSucceed = true
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                }
             } catch {
                 // runner.state already reflects the error
             }
@@ -151,22 +268,28 @@ struct SynthesisView: View {
         generationTask = nil
     }
 
-    /// Stage on tap (not on every render — that races with the
-    /// picker's own background copy and produces broken paths).
-    /// `UIDocumentPickerViewController(forExporting:)` then copies
-    /// both the markdown file and the `attachments/` folder into the
-    /// destination the user picks, preserving the folder structure
-    /// the inline `![[attachments/...]]` wikilinks expect.
-    private var exportButton: some View {
-        Button {
-            pendingExport = try? MarkdownExport.stageSynthesis(
-                text: streamingOutput,
-                sessions: store.sessions,
-                imageURL: { store.imageURL(for: $0) }
+    // MARK: - Helpers
+
+    private func formattedDate(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f.string(from: date)
+    }
+
+    private func previewText(_ summary: String) -> String {
+        let stripped = summary
+            .replacingOccurrences(
+                of: #"^\s*\*{0,2}TL\s*;\s*DR\s*\*{0,2}\s*[:：]?\s*"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
             )
-        } label: {
-            Label("Export to Obsidian", systemImage: "square.and.arrow.down")
-        }
-        .buttonStyle(.bordered)
+            .replacingOccurrences(
+                of: #"[*_`#\[\]()<>]"#,
+                with: "",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return stripped.isEmpty ? "(no summary yet)" : stripped
     }
 }

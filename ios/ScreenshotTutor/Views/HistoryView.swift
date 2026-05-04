@@ -52,6 +52,7 @@ struct HistoryView: View {
                         Section("Past sessions") {
                             ForEach(store.sessions) { session in
                                 Button {
+                                    UISelectionFeedbackGenerator().selectionChanged()
                                     onSelect(session.id)
                                     dismiss()
                                 } label: {
@@ -128,13 +129,27 @@ struct HistoryView: View {
         return f.string(from: date)
     }
 
+    /// Strip markdown markers and the model's frequent
+    /// "TL;DR:" prefix so the row reads as content, not as
+    /// markup. Mirrors the equivalent web-app helper for parity.
     private func previewText(_ summary: String) -> String {
         let stripped = summary
-            .replacingOccurrences(of: "**", with: "")
-            .replacingOccurrences(of: "##", with: "")
-            .replacingOccurrences(of: "*", with: "")
+            .replacingOccurrences(
+                of: #"^\s*\*{0,2}TL\s*;\s*DR\s*\*{0,2}\s*[:：]?\s*"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+            .replacingOccurrences(
+                of: #"[*_`#\[\]()<>]"#,
+                with: "",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"\s+"#,
+                with: " ",
+                options: .regularExpression
+            )
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if stripped.isEmpty { return "(no summary yet)" }
-        return stripped
+        return stripped.isEmpty ? "(no summary yet)" : stripped
     }
 }
