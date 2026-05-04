@@ -1,11 +1,23 @@
 // EmptyStateView.swift
 // Initial screen — pick a screenshot, choose a model, optionally
 // pre-load the model so the first generate isn't blocked on a
-// multi-minute weight download. Also exposes a "Delete download"
-// affordance so users can free disk space without leaving the app.
+// multi-minute weight download.
+//
+// Layout (top to bottom):
+//   • Subtitle hint.
+//   • Clipboard banner (only when an image is detected). Two
+//     PasteButton actions: crop a region, or use the full image.
+//   • Input row: Photos picker, Camera (when available), and two
+//     paste rows. All four affordances use the bordered button
+//     style so the visual hierarchy is consistent — the banner is
+//     the only prominent element when it's present.
+//   • Model panel: collapsed to a single status row when the model
+//     is ready (with a Menu for switching / deleting), or expanded
+//     to the full picker + load + progress when it's not.
 
 import SwiftUI
 import UIKit
+import PhotosUI
 import UniformTypeIdentifiers
 
 struct EmptyStateView: View {
@@ -24,6 +36,16 @@ struct EmptyStateView: View {
     @State private var showCamera: Bool = false
     @State private var clipboardHasImage: Bool = false
 
+    /// Whether the model panel is showing its full form. Auto-set
+    /// based on load state, but the user can also tap the compact
+    /// row to expand it (e.g. to switch models).
+    @State private var modelPanelExpanded: Bool = true
+
+    /// Drives the inline `PhotosPicker`. Owning the selection here
+    /// (rather than wrapping in a separate component) lets the
+    /// picker's button style and label match the other input rows.
+    @State private var photosItem: PhotosPickerItem?
+
     /// Two paths a paste can take. `crop` routes the image through
     /// the region selector (the existing default flow); `full` skips
     /// the selector and commits the whole image as a session.
@@ -34,18 +56,11 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // Subtitle only — the navigation bar already shows
-            // "Screenshot Tutor" inline (navigationBarTitleDisplayMode
-            // .inline in ContentView), so a duplicate hero title here
-            // wastes vertical space without adding clarity.
             Text("On-device summaries. Nothing leaves your iPad.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 480, alignment: .leading)
 
-            // When the user just took a screenshot and routed it to
-            // the clipboard (via Shortcut or "Copy and Delete"), this
-            // banner makes the next step a single tap.
             if clipboardHasImage {
                 clipboardBanner
                     .frame(maxWidth: 480)
@@ -65,20 +80,30 @@ struct EmptyStateView: View {
         .onAppear {
             refreshDiskState()
             refreshClipboardState()
+            // First impression: panel open if there's setup to do,
+            // collapsed if the model is already ready.
+            modelPanelExpanded = !isReadyState
         }
-        .onChange(of: runner.selectedModelID) { _, _ in refreshDiskState() }
+        .onChange(of: runner.selectedModelID) { _, _ in
+            refreshDiskState()
+            // User picked a different model — reopen the panel so
+            // they can see the load button / status.
+            if !isReadyState { modelPanelExpanded = true }
+        }
+        .onChange(of: photosItem) { _, newItem in
+            Task { await loadPhoto(newItem) }
+        }
         .onChange(of: runner.state) { _, newState in
-            // After a load completes the cache is freshly populated;
-            // after delete the directory is gone. Either way, re-read.
             switch newState {
-            case .ready, .idle, .failed: refreshDiskState()
-            default: break
+            case .ready:
+                refreshDiskState()
+                modelPanelExpanded = false
+            case .idle, .failed:
+                refreshDiskState()
+            default:
+                break
             }
         }
-        // Re-check the clipboard whenever the app comes back to the
-        // foreground — the user has likely just taken a screenshot
-        // and switched apps, so the clipboard may have an image now
-        // that wasn't there at first onAppear.
         .onReceive(
             NotificationCenter.default.publisher(
                 for: UIApplication.didBecomeActiveNotification
@@ -86,21 +111,12 @@ struct EmptyStateView: View {
         ) { _ in refreshClipboardState() }
     }
 
-    /// Banner shown when there's an image waiting in the clipboard.
-    /// The detection uses `UIPasteboard.general.hasImages`, a
-    /// metadata-only check that does not trigger the "Allow Paste"
-    /// prompt. The actual paste actions are system `PasteButton`s —
-    /// iOS treats an explicit tap on one as user authorization, so
-    /// the prompt is also skipped on the actual paste.
-    ///
-    /// Two buttons, one per paste mode: "crop" routes through the
-    /// region selector (default for screenshots that have UI chrome
-    /// to trim), "full" commits the entire image as-is (when the
-    /// screenshot is already exactly what the user wants).
-    ///
-    /// Visual treatment: an iOS notification-style tinted panel
-    /// rather than a full-bleed accent-color CTA. The user already
-    /// has the image in hand — this is a hint, not an alert.
+    // MARK: - Banner
+
+    /// iOS notification-style tinted panel shown when there's an
+    /// image waiting in the clipboard. Two PasteButtons inside, one
+    /// per paste mode. Detection is `UIPasteboard.general.hasImages`
+    /// (metadata only — doesn't trigger the "Allow Paste" prompt).
     private var clipboardBanner: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -125,10 +141,6 @@ struct EmptyStateView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    /// One paste affordance: a system `PasteButton` with a caption
-    /// stacked beneath it. The PasteButton's label is fixed to
-    /// "Paste" by iOS, so the caption is what tells the two
-    /// side-by-side buttons apart.
     @ViewBuilder
     private func pasteAction(_ mode: PasteMode, caption: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -141,27 +153,67 @@ struct EmptyStateView: View {
         }
     }
 
-    private func refreshClipboardState() {
-        clipboardHasImage = UIPasteboard.general.hasImages
+    // MARK: - Input row
+
+    /// Four input affordances, all rendered at the same visual
+    /// weight so the user sees the input methods as peers. The
+    /// banner above is the only prominent element when present.
+    private var inputButtons: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                PhotosPicker(selection: $photosItem, matching: .images, photoLibrary: .shared()) {
+                    Label("Pick a screenshot", systemImage: "photo.on.rectangle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+
+                if CameraPicker.isAvailable {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        showCamera = true
+                    } label: {
+                        Label("Take a photo", systemImage: "camera")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
+            }
+
+            // Two paste paths, each with a one-line caption that
+            // distinguishes them. Caption phrasing matches the
+            // banner above.
+            pasteRow(.crop, caption: "Crop a region")
+            pasteRow(.full, caption: "Use full image")
+        }
     }
 
-    /// Pull the first UIImage out of the picked NSItemProviders and
-    /// feed it through `pickedImage`.
-    ///
-    /// Two iOS gotchas this avoids:
-    ///
-    /// 1. `canLoadObject(ofClass:)` queries pasteboard metadata as a
-    ///    *separate* pasteboard operation — on iOS 17+ this can be
-    ///    refused with `PBErrorDomain Code=13 "Operation not
-    ///    authorized."` even immediately after a PasteButton tap.
-    ///    Skip the pre-check; just attempt the load.
-    ///
-    /// 2. The completion-handler form of `loadObject` fires on a
-    ///    background queue *after* the PasteButton authorization
-    ///    window has closed, which produces the same Code=13 error.
-    ///    Use the iOS 16+ async `loadDataRepresentation(forTypeIdentifier:)`
-    ///    inside a Task instead — that holds the auth open for the
-    ///    duration of the awaited call.
+    @ViewBuilder
+    private func pasteRow(_ mode: PasteMode, caption: String) -> some View {
+        HStack(spacing: 12) {
+            PasteButton(supportedContentTypes: [UTType.image]) { providers in
+                handlePaste(providers, mode: mode)
+            }
+            Text(caption)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: - Photo loading
+
+    private func loadPhoto(_ item: PhotosPickerItem?) async {
+        guard let item else { return }
+        if let data = try? await item.loadTransferable(type: Data.self),
+           let ui = UIImage(data: data) {
+            await MainActor.run { pickedImage = ui }
+        }
+    }
+
+    // MARK: - Paste handling
+
     private func handlePaste(_ providers: [NSItemProvider], mode: PasteMode) {
         Task {
             for provider in providers {
@@ -169,16 +221,11 @@ struct EmptyStateView: View {
                     .compactMap(UTType.init)
                     .first(where: { $0.conforms(to: .image) })
                 else { continue }
-
                 do {
-                    // NSItemProvider only exposes the completion-handler
-                    // form of loadDataRepresentation publicly; wrap it in
-                    // a continuation so we can `await` inside the Task
-                    // and keep PasteButton's authorization window open
-                    // for the duration of the call.
                     let data = try await loadData(from: provider, type: utType)
                     if let image = UIImage(data: data) {
                         await MainActor.run {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             switch mode {
                             case .crop: pickedImage = image
                             case .full: onUseFullImage(image)
@@ -213,62 +260,92 @@ struct EmptyStateView: View {
         }
     }
 
-    /// Four input affordances: Photos library pick, fresh camera
-    /// capture, and two system `PasteButton`s — one that crops a
-    /// region after pasting (the default for screenshots that have
-    /// status bars, app chrome, or surrounding context to trim), and
-    /// one that uses the full pasted image as-is.
-    ///
-    /// Both PasteButtons skip the "Allow Paste" prompt because they
-    /// are system-vetted controls; iOS treats their explicit tap as
-    /// user authorization the same way it treats Cmd+V from a
-    /// hardware keyboard.
-    ///
-    /// Camera is hidden on environments without a camera (Simulator).
-    private var inputButtons: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                ImagePickerButton(image: $pickedImage, label: "Pick a screenshot")
-                if CameraPicker.isAvailable {
-                    Button {
-                        showCamera = true
-                    } label: {
-                        Label("Take a photo", systemImage: "camera")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.accentColor)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                }
-            }
+    private func refreshClipboardState() {
+        clipboardHasImage = UIPasteboard.general.hasImages
+    }
 
-            // Two paste paths, each with a one-line caption that
-            // distinguishes them. Caption phrasing matches the
-            // banner above so the choice reads the same in both
-            // places.
-            pasteRow(.crop, caption: "Crop a region")
-            pasteRow(.full, caption: "Use full image")
-        }
+    // MARK: - Model panel
+
+    private var isReadyState: Bool {
+        if case .ready = runner.state { return true }
+        return false
     }
 
     @ViewBuilder
-    private func pasteRow(_ mode: PasteMode, caption: String) -> some View {
-        HStack(spacing: 12) {
-            PasteButton(supportedContentTypes: [UTType.image]) { providers in
-                handlePaste(providers, mode: mode)
-            }
-            Text(caption)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
+    private var modelPanel: some View {
+        if isReadyState && !modelPanelExpanded {
+            compactModelPanel
+        } else {
+            fullModelPanel
         }
     }
 
-    private var modelPanel: some View {
+    /// One-row summary shown when the model is ready and the panel
+    /// has been collapsed. Combines name, size, and ready state into
+    /// a single line; switch / delete live in a Menu on the right.
+    private var compactModelPanel: some View {
+        let label = ModelCatalog.entry(id: runner.selectedModelID)?.label ?? runner.selectedModelID
+        return HStack(spacing: 10) {
+            Image(systemName: "checkmark.seal.fill")
+                .foregroundStyle(.green)
+            Text(label)
+                .font(.callout.weight(.medium))
+            if isDownloaded {
+                Text("· \(formatBytes(diskSizeBytes))")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Menu {
+                Button {
+                    modelPanelExpanded = true
+                } label: {
+                    Label("Switch model…", systemImage: "arrow.triangle.2.circlepath")
+                }
+                if isDownloaded {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Label("Delete download", systemImage: "trash")
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityLabel("Model options")
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .confirmationDialog(
+            "Delete this model from disk?",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) { deleteConfirmActions } message: {
+            Text("The weights will be re-downloaded from Hugging Face the next time you load this model.")
+        }
+    }
+
+    /// Full panel shown when the model is loading, idle, failed, or
+    /// when the user explicitly tapped "Switch model…" from the
+    /// compact form.
+    private var fullModelPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Model")
-                .font(.headline)
+            HStack {
+                Text("Model")
+                    .font(.headline)
+                Spacer()
+                if isReadyState {
+                    Button {
+                        modelPanelExpanded = false
+                    } label: {
+                        Image(systemName: "chevron.up")
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel("Collapse model panel")
+                }
+            }
 
             Picker("Model", selection: $runner.selectedModelID) {
                 ForEach(ModelCatalog.entries) { entry in
@@ -284,11 +361,10 @@ struct EmptyStateView: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack {
-                loadButton
-                statusLabel
-                Spacer()
-            }
+            // Fixed-height container so the row doesn't reflow as
+            // the load button becomes a progress bar.
+            modelStatusRow
+                .frame(minHeight: 40)
 
             if isDownloaded {
                 HStack {
@@ -300,8 +376,9 @@ struct EmptyStateView: View {
                         showDeleteConfirm = true
                     } label: {
                         Label("Delete download", systemImage: "trash")
-                            .font(.footnote)
+                            .labelStyle(.iconOnly)
                     }
+                    .controlSize(.small)
                 }
             }
         }
@@ -312,49 +389,65 @@ struct EmptyStateView: View {
             "Delete this model from disk?",
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
-        ) {
-            Button("Delete \(formatBytes(diskSizeBytes))", role: .destructive) {
-                Task {
-                    await runner.deleteModel(id: runner.selectedModelID)
-                    refreshDiskState()
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
+        ) { deleteConfirmActions } message: {
             Text("The weights will be re-downloaded from Hugging Face the next time you load this model.")
         }
     }
 
     @ViewBuilder
-    private var loadButton: some View {
-        switch runner.state {
-        case .ready:
-            Label("Model ready", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-        case .loading:
-            ProgressView()
-        default:
-            Button("Load model") {
-                Task { await runner.loadModel() }
+    private var deleteConfirmActions: some View {
+        Button("Delete \(formatBytes(diskSizeBytes))", role: .destructive) {
+            Task {
+                await runner.deleteModel(id: runner.selectedModelID)
+                refreshDiskState()
             }
-            .buttonStyle(.borderedProminent)
         }
+        Button("Cancel", role: .cancel) {}
     }
 
     @ViewBuilder
-    private var statusLabel: some View {
+    private var modelStatusRow: some View {
         switch runner.state {
+        case .ready:
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(.green)
+                Text("Model ready")
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
         case .loading(let p):
-            Text("\(Int(p * 100))%")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Loading… \(Int(p * 100))%")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                ProgressView(value: p)
+            }
         case .failed(let msg):
-            Text(msg)
-                .font(.footnote)
-                .foregroundStyle(.red)
-                .lineLimit(2)
+            HStack(spacing: 8) {
+                Label(msg, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                Spacer()
+                Button {
+                    Task { await runner.loadModel() }
+                } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
         default:
-            EmptyView()
+            HStack {
+                Button {
+                    Task { await runner.loadModel() }
+                } label: {
+                    Label("Load model", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                Spacer()
+            }
         }
     }
 

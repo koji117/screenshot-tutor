@@ -2,7 +2,7 @@
 // Top-level view. Routes between the three screens that make up the
 // app — empty state (pick + load), an active session (summary +
 // breakdown + chat), and a synthesis (themes across past sessions).
-// Toolbar exposes New, History (sheet), and Language (menu).
+// Toolbar exposes History, Settings, and New.
 
 import SwiftUI
 import UIKit
@@ -30,11 +30,11 @@ struct ContentView: View {
     @State private var pickedImage: UIImage?
     @State private var pendingImage: PendingImage?
     @State private var showHistory: Bool = false
+    @State private var showSettings: Bool = false
 
     var body: some View {
         NavigationStack {
             mainContent
-                .navigationTitle(navigationTitle)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
         }
@@ -44,12 +44,16 @@ struct ContentView: View {
                 onSynthesize: { route = .synthesis }
             )
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+        }
         .fullScreenCover(item: $pendingImage) { pending in
             RegionSelectorView(
                 image: pending.image,
                 onConfirm: { final in
                     pendingImage = nil
                     if let session = store.add(image: final) {
+                        UISelectionFeedbackGenerator().selectionChanged()
                         route = .session(session.id)
                     }
                 },
@@ -57,14 +61,19 @@ struct ContentView: View {
             )
         }
         .onChange(of: pickedImage) { _, newImage in
-            // The empty state binds to `pickedImage`; when the user
-            // picks one, route through the region selector before
-            // committing it as a session. iPadOS doesn't expose
-            // partial-screen screenshots, so this is where the
-            // user trims the screenshot down to the relevant area.
+            // Route fresh picks through either the region selector
+            // or directly to a new session, depending on the user's
+            // default-image-mode preference. Paste actions bypass
+            // this — they call onUseFullImage / set pickedImage
+            // explicitly per their own per-tap choice.
             guard let img = newImage else { return }
             pickedImage = nil
-            pendingImage = PendingImage(image: img)
+            switch settings.imageMode {
+            case .crop:
+                pendingImage = PendingImage(image: img)
+            case .full:
+                useFullImage(img)
+            }
         }
     }
 
@@ -76,6 +85,7 @@ struct ContentView: View {
                 pickedImage: $pickedImage,
                 onUseFullImage: useFullImage(_:)
             )
+            .navigationTitle("Screenshot Tutor")
         case .session(let id):
             SessionView(sessionID: id)
         case .synthesis:
@@ -84,24 +94,18 @@ struct ContentView: View {
                 // jump back to the start screen.
                 route = .empty
             })
+            .navigationTitle("Synthesis")
         }
     }
 
     /// "Use as-is" path — skip the region selector entirely and
-    /// commit the image directly to a new session. Photos / camera /
-    /// "paste & crop" still go through `pickedImage` and the
-    /// `RegionSelectorView` cover above.
+    /// commit the image directly to a new session. Photos / camera
+    /// route here when `settings.imageMode == .full`; the paste
+    /// "Use full image" button always routes here.
     private func useFullImage(_ image: UIImage) {
         if let session = store.add(image: image) {
+            UISelectionFeedbackGenerator().selectionChanged()
             route = .session(session.id)
-        }
-    }
-
-    private var navigationTitle: String {
-        switch route {
-        case .empty: return "Screenshot Tutor"
-        case .session: return "Session"
-        case .synthesis: return "Synthesis"
         }
     }
 
@@ -115,14 +119,10 @@ struct ContentView: View {
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Menu {
-                Picker("Language", selection: $settings.lang) {
-                    ForEach(Lang.allCases, id: \.self) { lang in
-                        Text(lang.displayName).tag(lang)
-                    }
-                }
+            Button {
+                showSettings = true
             } label: {
-                Label("Language: \(settings.lang.displayName)", systemImage: "globe")
+                Label("Settings", systemImage: "gearshape")
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
