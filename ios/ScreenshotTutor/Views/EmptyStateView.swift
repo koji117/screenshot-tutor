@@ -12,6 +12,10 @@ struct EmptyStateView: View {
     @EnvironmentObject var runner: VLMRunner
     @Binding var pickedImage: UIImage?
 
+    /// Skip the region selector and commit the pasted image directly
+    /// as a new session. Wired in by ContentView.
+    let onUseFullImage: (UIImage) -> Void
+
     // Re-read on every pickerSelection change so the disk-size /
     // downloaded-state below stay accurate without an explicit observer.
     @State private var diskSizeBytes: Int64 = 0
@@ -19,6 +23,14 @@ struct EmptyStateView: View {
     @State private var showDeleteConfirm: Bool = false
     @State private var showCamera: Bool = false
     @State private var clipboardHasImage: Bool = false
+
+    /// Two paths a paste can take. `crop` routes the image through
+    /// the region selector (the existing default flow); `full` skips
+    /// the selector and commits the whole image as a session.
+    private enum PasteMode {
+        case crop
+        case full
+    }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -77,23 +89,32 @@ struct EmptyStateView: View {
     /// Prominent banner shown when there's an image waiting in the
     /// clipboard. The detection uses `UIPasteboard.general.hasImages`,
     /// a metadata-only check that does not trigger the "Allow Paste"
-    /// prompt. The actual paste action is a system `PasteButton` —
-    /// that's the iOS-vetted control that bypasses the prompt because
-    /// Apple treats an explicit tap on it as user authorization.
+    /// prompt. The actual paste actions are system `PasteButton`s —
+    /// the iOS-vetted control that bypasses the prompt because Apple
+    /// treats an explicit tap on it as user authorization.
+    ///
+    /// Two buttons, one per paste mode: "crop" routes through the
+    /// region selector (default for screenshots that have UI chrome
+    /// to trim), "full" commits the entire image as-is (right when
+    /// the screenshot is already exactly what the user wants).
     private var clipboardBanner: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "doc.on.clipboard.fill")
-                .font(.title2)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Image ready in clipboard")
-                    .font(.headline)
-                Text("Tap Paste to summarize it")
-                    .font(.footnote)
-                    .opacity(0.85)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "doc.on.clipboard.fill")
+                    .font(.title2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Image ready in clipboard")
+                        .font(.headline)
+                    Text("Choose how to bring it in")
+                        .font(.footnote)
+                        .opacity(0.85)
+                }
+                Spacer()
             }
-            Spacer()
-            pasteControl
-                .tint(.white)
+            HStack(spacing: 10) {
+                pasteAction(.crop, caption: "Crop a region")
+                pasteAction(.full, caption: "Use full image")
+            }
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 16)
@@ -102,15 +123,20 @@ struct EmptyStateView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    /// The system paste button. Auto-disables when the clipboard has
-    /// no image-typed item, so it doubles as a "paste is available"
-    /// indicator. Crucially, it does NOT trigger the "Allow Paste"
-    /// prompt — iOS treats an explicit tap on a `PasteButton` as
-    /// authorization, the same way it treats `Cmd+V` from the
-    /// hardware keyboard.
-    private var pasteControl: some View {
-        PasteButton(supportedContentTypes: [UTType.image]) { providers in
-            handlePaste(providers)
+    /// One paste affordance: a system `PasteButton` next to a small
+    /// caption explaining the mode. The PasteButton itself always
+    /// reads "Paste" (its label is system-controlled), so the
+    /// caption is what disambiguates the two side-by-side buttons.
+    @ViewBuilder
+    private func pasteAction(_ mode: PasteMode, caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            PasteButton(supportedContentTypes: [UTType.image]) { providers in
+                handlePaste(providers, mode: mode)
+            }
+            .tint(.white)
+            Text(caption)
+                .font(.caption2)
+                .opacity(0.85)
         }
     }
 
@@ -135,7 +161,7 @@ struct EmptyStateView: View {
     ///    Use the iOS 16+ async `loadDataRepresentation(forTypeIdentifier:)`
     ///    inside a Task instead — that holds the auth open for the
     ///    duration of the awaited call.
-    private func handlePaste(_ providers: [NSItemProvider]) {
+    private func handlePaste(_ providers: [NSItemProvider], mode: PasteMode) {
         Task {
             for provider in providers {
                 guard let utType = provider.registeredTypeIdentifiers
@@ -151,7 +177,12 @@ struct EmptyStateView: View {
                     // for the duration of the call.
                     let data = try await loadData(from: provider, type: utType)
                     if let image = UIImage(data: data) {
-                        await MainActor.run { pickedImage = image }
+                        await MainActor.run {
+                            switch mode {
+                            case .crop: pickedImage = image
+                            case .full: onUseFullImage(image)
+                            }
+                        }
                         return
                     }
                 } catch {
@@ -181,13 +212,16 @@ struct EmptyStateView: View {
         }
     }
 
-    /// Three input affordances: Photos library pick, fresh camera
-    /// capture, and a system `PasteButton`. The PasteButton replaces
-    /// the previous custom Button that called `UIPasteboard.general.image`
-    /// — that direct pasteboard read triggered the "Allow Paste"
-    /// prompt every time, which got intolerable for a screenshot-
-    /// heavy workflow. The system PasteButton bypasses that prompt
-    /// entirely; iOS treats its explicit tap as authorization.
+    /// Four input affordances: Photos library pick, fresh camera
+    /// capture, and two system `PasteButton`s — one that crops a
+    /// region after pasting (the default for screenshots that have
+    /// status bars, app chrome, or surrounding context to trim), and
+    /// one that uses the full pasted image as-is.
+    ///
+    /// Both PasteButtons skip the "Allow Paste" prompt because they
+    /// are system-vetted controls; iOS treats their explicit tap as
+    /// user authorization the same way it treats Cmd+V from a
+    /// hardware keyboard.
     ///
     /// Camera is hidden on environments without a camera (Simulator).
     private var inputButtons: some View {
@@ -208,8 +242,24 @@ struct EmptyStateView: View {
                 }
             }
 
-            pasteControl
-                .frame(maxWidth: .infinity)
+            // Two paste paths, each with a one-line caption that
+            // distinguishes them (the PasteButton's label is
+            // system-controlled and always reads "Paste").
+            pasteRow(.crop, caption: "Paste, then crop a region")
+            pasteRow(.full, caption: "Paste the full image as-is")
+        }
+    }
+
+    @ViewBuilder
+    private func pasteRow(_ mode: PasteMode, caption: String) -> some View {
+        HStack(spacing: 12) {
+            PasteButton(supportedContentTypes: [UTType.image]) { providers in
+                handlePaste(providers, mode: mode)
+            }
+            Text(caption)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
         }
     }
 

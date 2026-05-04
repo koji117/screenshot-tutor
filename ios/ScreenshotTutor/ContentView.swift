@@ -72,7 +72,10 @@ struct ContentView: View {
     private var mainContent: some View {
         switch route {
         case .empty:
-            EmptyStateView(pickedImage: $pickedImage)
+            EmptyStateView(
+                pickedImage: $pickedImage,
+                onUseFullImage: useFullImage(_:)
+            )
         case .session(let id):
             SessionView(sessionID: id)
         case .synthesis:
@@ -81,6 +84,16 @@ struct ContentView: View {
                 // jump back to the start screen.
                 route = .empty
             })
+        }
+    }
+
+    /// "Use as-is" path — skip the region selector entirely and
+    /// commit the image directly to a new session. Photos / camera /
+    /// "paste & crop" still go through `pickedImage` and the
+    /// `RegionSelectorView` cover above.
+    private func useFullImage(_ image: UIImage) {
+        if let session = store.add(image: image) {
+            route = .session(session.id)
         }
     }
 
