@@ -6,15 +6,13 @@
 // Layout (top to bottom):
 //   • Subtitle hint.
 //   • Clipboard banner (only when an image is detected). Pure
-//     signal — points the user at the input row's clipboard buttons,
+//     signal — points the user at the input row's paste rows,
 //     carries no buttons of its own.
-//   • Input row, 2×2:
-//       [Pick a screenshot]   [Take a photo]
-//       [Crop]                [Use full image]
-//     The bottom two read from the system clipboard. They were
-//     previously system PasteButtons; now regular bordered Buttons
-//     so the visible label says "Crop" / "Use full image" rather
-//     than the system-mandated "Paste."
+//   • Input row: Photos / Camera (top), then two paste rows. The
+//     paste rows use system PasteButtons so the iOS "Allow Paste"
+//     prompt is bypassed — the captions next to them ("Crop a
+//     region" / "Use full image") explain what each does, since
+//     PasteButton's own label is system-fixed to "Paste."
 //   • Model panel: collapsed to a single status row when the model
 //     is ready (with a Menu for switching / deleting), or expanded
 //     to the full picker + load + progress when it's not.
@@ -172,25 +170,12 @@ struct EmptyStateView: View {
 
     // MARK: - Input row
 
-    /// Four input affordances laid out as a 2×2 grid of bordered
-    /// large buttons:
-    ///
-    ///   [Pick a screenshot]   [Take a photo]
-    ///   [Crop]                [Use full image]
-    ///
-    /// The bottom row reads from the system clipboard. They were
-    /// previously system `PasteButton`s (which carry a fixed
-    /// "Paste" label), now regular `Button`s so the user-facing
-    /// label can match what actually happens. Trade-off: tapping a
-    /// regular Button to read `UIPasteboard.general` triggers the
-    /// iOS "Allow Paste" prompt on first use within a session,
-    /// where PasteButton would have skipped it. We accept that
-    /// trade-off here because a button labeled "Paste" next to a
-    /// caption that says "Crop a region" was awkward, and the user
-    /// asked for the clearer label.
-    ///
-    /// Buttons disable themselves when `clipboardHasImage` is
-    /// false (mirrors PasteButton's prior auto-disable behavior).
+    /// Four input affordances. Photos and Camera (top row) are the
+    /// always-explicit picks. The two Paste rows below are always
+    /// visible — the system PasteButton auto-disables when the
+    /// clipboard has no image, which serves as the visual cue.
+    /// When the clipboard *does* have an image, the banner above
+    /// flags it and the buttons here become enabled.
     private var inputButtons: some View {
         VStack(spacing: 10) {
             HStack(spacing: 12) {
@@ -222,33 +207,26 @@ struct EmptyStateView: View {
                 }
             }
 
-            HStack(spacing: 12) {
-                clipboardButton(.crop, label: "Crop")
-                clipboardButton(.full, label: "Use full image")
-            }
+            // Two paste paths via system PasteButtons (which skip
+            // the iOS "Allow Paste" prompt). PasteButton's own label
+            // is system-fixed to "Paste"; the caption beside it
+            // explains what each row will do with the pasted image.
+            pasteRow(.crop, caption: "Crop a region")
+            pasteRow(.full, caption: "Use full image")
         }
     }
 
-    /// One clipboard-reading button. Reads `UIPasteboard.general.image`
-    /// at tap and routes per `PasteMode`. Disabled when the
-    /// clipboard has no image (the banner-vs-no-banner state is
-    /// driven by the same `clipboardHasImage` flag).
     @ViewBuilder
-    private func clipboardButton(_ mode: PasteMode, label: String) -> some View {
-        Button {
-            guard let image = UIPasteboard.general.image else { return }
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            switch mode {
-            case .crop: pickedImage = image
-            case .full: onUseFullImage(image)
+    private func pasteRow(_ mode: PasteMode, caption: String) -> some View {
+        HStack(spacing: 12) {
+            PasteButton(supportedContentTypes: [UTType.image]) { providers in
+                handlePaste(providers, mode: mode)
             }
-        } label: {
-            Label(label, systemImage: "doc.on.clipboard")
-                .frame(maxWidth: .infinity)
+            Text(caption)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-        .disabled(!clipboardHasImage)
     }
 
     // MARK: - Photo loading
@@ -261,7 +239,33 @@ struct EmptyStateView: View {
         }
     }
 
-    // MARK: - NSItemProvider data loading (drag-and-drop)
+    // MARK: - Paste handling
+
+    private func handlePaste(_ providers: [NSItemProvider], mode: PasteMode) {
+        Task {
+            for provider in providers {
+                guard let utType = provider.registeredTypeIdentifiers
+                    .compactMap(UTType.init)
+                    .first(where: { $0.conforms(to: .image) })
+                else { continue }
+                do {
+                    let data = try await loadData(from: provider, type: utType)
+                    if let image = UIImage(data: data) {
+                        await MainActor.run {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            switch mode {
+                            case .crop: pickedImage = image
+                            case .full: onUseFullImage(image)
+                            }
+                        }
+                        return
+                    }
+                } catch {
+                    continue
+                }
+            }
+        }
+    }
 
     private func loadData(from provider: NSItemProvider, type: UTType) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
