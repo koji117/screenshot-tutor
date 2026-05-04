@@ -119,17 +119,42 @@ struct EmptyStateView: View {
     }
 
     /// Pull the first UIImage out of the picked NSItemProviders and
-    /// feed it through `pickedImage`. Off-main-thread by default
-    /// because `loadObject` can block on disk; we hop back to the
-    /// main actor before mutating the binding.
+    /// feed it through `pickedImage`.
+    ///
+    /// Two iOS gotchas this avoids:
+    ///
+    /// 1. `canLoadObject(ofClass:)` queries pasteboard metadata as a
+    ///    *separate* pasteboard operation — on iOS 17+ this can be
+    ///    refused with `PBErrorDomain Code=13 "Operation not
+    ///    authorized."` even immediately after a PasteButton tap.
+    ///    Skip the pre-check; just attempt the load.
+    ///
+    /// 2. The completion-handler form of `loadObject` fires on a
+    ///    background queue *after* the PasteButton authorization
+    ///    window has closed, which produces the same Code=13 error.
+    ///    Use the iOS 16+ async `loadDataRepresentation(forTypeIdentifier:)`
+    ///    inside a Task instead — that holds the auth open for the
+    ///    duration of the awaited call.
     private func handlePaste(_ providers: [NSItemProvider]) {
-        guard let provider = providers.first(where: {
-            $0.canLoadObject(ofClass: UIImage.self)
-        }) else { return }
-        provider.loadObject(ofClass: UIImage.self) { object, _ in
-            guard let image = object as? UIImage else { return }
-            DispatchQueue.main.async {
-                pickedImage = image
+        Task {
+            for provider in providers {
+                guard let typeID = provider.registeredTypeIdentifiers.first(where: { id in
+                    guard let utType = UTType(id) else { return false }
+                    return utType.conforms(to: .image)
+                }) else { continue }
+
+                do {
+                    let data = try await provider.loadDataRepresentation(
+                        forTypeIdentifier: typeID
+                    )
+                    if let image = UIImage(data: data) {
+                        await MainActor.run { pickedImage = image }
+                        return
+                    }
+                } catch {
+                    // Try the next provider; nothing usable on this one.
+                    continue
+                }
             }
         }
     }
